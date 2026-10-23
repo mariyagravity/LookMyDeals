@@ -1,0 +1,13 @@
+LookMyDeals_Project_Docs/
+lookmydeals-skills/
+lookmydeals_skills/
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

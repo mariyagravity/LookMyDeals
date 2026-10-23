@@ -23,6 +23,26 @@ npm install
 cp .env.example .env
 ```
 
+Optional server integrations can be configured in `.env`:
+- `SERPAPI_KEY` enables external shopping search.
+- `OPENAI_API_KEY` enables brochure image extraction; PDF page rendering is not implemented yet.
+- `OPENAI_MODEL` optionally selects the OpenAI model (defaults to `gpt-4o`).
+
+### MySQL Database (XAMPP)
+
+Start the MySQL module in the XAMPP Control Panel and make sure the `lookmydeals` database exists. Configure `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` in the root `.env` file. The local XAMPP defaults are already listed in `.env.example`.
+
+The schema is managed by [`backend/sql/001_init_mysql.sql`](backend/sql/001_init_mysql.sql) and [`backend/sql/002_catalog_dates_and_requests.sql`](backend/sql/002_catalog_dates_and_requests.sql). Apply migrations and seed the demo catalog with:
+
+```bash
+npm run db:migrate
+npm run db:seed
+```
+
+The backend checks its MySQL connection on startup and reports the connection at `GET /api/health`.
+
+The shopper catalog, retailer-approved brochure listings, and offer requests are loaded from and saved to MySQL. The reminder cart and demo deal claims remain browser-local.
+
 ### 3. Run Locally
 
 #### Run Frontend Dev Server (Vite)
@@ -61,7 +81,7 @@ npm run preview
 ### Security Secret Audit (lmd-security)
 Ensure no secrets were leaked into the frontend bundle:
 ```bash
-grep -rE "sk-|OPENAI_API_KEY|SERPAPI" dist/
+grep -rE "sk-|OPENAI_API_KEY|SERPAPI" frontend/dist/
 # Output must be completely empty
 ```
 
@@ -80,13 +100,13 @@ grep -rE "sk-|OPENAI_API_KEY|SERPAPI" dist/
 
 | Feature | Implementation Status | Implementation Notes |
 | :--- | :--- | :--- |
-| **Local Discovery (FR-101..103)** | **Live (In-Memory & Seed)** | Instant sub-50ms filtering by Kochi PIN code and category. |
+| **Local Discovery (FR-101..103)** | **Live (MySQL demo catalog)** | Loads stores, products, categories, localities, and listings through the backend API. Prices are demonstrative. |
 | **Pack-Size Correctness** | **Live** | 1L and 5L oils / 1kg and 5kg rice are strictly separated. |
 | **Reminder Cart (FR-301/302)** | **Live (`localStorage`)** | Versioned key `lmd.cart.v1` with Zod schema parsing & error recovery. |
 | **Claim In-Store Deal (FR-401)** | **Live Demo Flow** | Generates CSPRNG voucher codes; honest copy (no simulated WhatsApp). |
-| **Request an Offer (FR-402)** | **Live (`localStorage`)** | Shoppers can submit demand requests; viewable in Retailer Portal. |
-| **AI Brochure Upload & Review (FR-502/503)** | **Live (Interactive)** | Drag-and-drop PDF/JPG/PNG flyer upload with editable review table. Approved deals immediately enter the shopper feed. |
-| **External Web Search (FR-601)** | **Live / Fallback** | Segregated comparative tab. Calls SerpApi if configured; otherwise provides fallback results with mandatory disclaimers. |
+| **Request an Offer (FR-402)** | **Live (MySQL)** | Shoppers can submit requests; requests are viewable in Retailer Portal. |
+| **AI Brochure Upload & Review (FR-502/503)** | **Partial / optional** | JPEG/PNG extraction requires `OPENAI_API_KEY`; PDF page rendering is not implemented. Candidates need retailer review, category assignment, and explicit approval. |
+| **External Web Search (FR-601)** | **Optional** | Calls SerpApi when `SERPAPI_KEY` is configured; otherwise shows a configuration message without inventing web listings. |
 | **Server-Side Proxy (Milestone 4)** | **Live (Express)** | Magic-byte checks, CORS, rate limits, and secret isolation. |
 
 ---

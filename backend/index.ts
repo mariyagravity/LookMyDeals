@@ -32,6 +32,8 @@ import brochureRouter from './routes/brochure';
 import externalSearchRouter from './routes/externalSearch';
 import catalogRouter from './routes/catalog';
 import offerRequestsRouter from './routes/offerRequests';
+import retailerRouter from './routes/retailer';
+import claimsRouter from './routes/claims';
 
 // Health check endpoint
 app.get('/api/health', async (_req: Request, res: Response) => {
@@ -57,6 +59,8 @@ app.use('/api/brochure', brochureRouter);
 app.use('/api/external-search', externalSearchRouter);
 app.use('/api/catalog', catalogRouter);
 app.use('/api/offer-requests', offerRequestsRouter);
+app.use('/api/retailer', retailerRouter);
+app.use('/api/claims', claimsRouter);
 
 // Centralized error handler conforming to API_SPEC.md
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

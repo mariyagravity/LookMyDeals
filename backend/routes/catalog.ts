@@ -1,10 +1,56 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
-import { RowDataPacket } from 'mysql2';
+import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { z } from 'zod';
 import { db } from '../db';
+import { createRateLimiter } from '../middleware/rateLimit';
+import { getRetailerSession, requireRetailer } from '../middleware/retailerSession';
 
 const router = Router();
+const brochureVisitLimiter = createRateLimiter(120, 15 * 60 * 1000);
+const BrochureVisitSchema = z.object({ visitorId: z.string().uuid() });
+
+router.get('/brochure-visits', requireRetailer, async (req: Request, res: Response) => {
+  const session = getRetailerSession(req);
+  if (!session) return res.status(401).json({ error: { code: 'RETAILER_LOGIN_REQUIRED', message: 'Sign in to view brochure analytics.' } });
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(`
+      SELECT s.id AS store_id, s.name AS store_name, COUNT(v.visitor_id) AS unique_visitors
+      FROM stores s
+      LEFT JOIN brochure_visitors v ON v.store_id = s.id
+      WHERE s.id = ?
+      GROUP BY s.id, s.name
+      ORDER BY s.name
+    `, [session.storeId]);
+    return res.json(rows.map((row) => ({
+      storeId: String(row.store_id),
+      storeName: String(row.store_name),
+      uniqueVisitors: Number(row.unique_visitors),
+    })));
+  } catch {
+    return res.status(500).json({ error: { code: 'BROCHURE_STATS_FAILED', message: 'Could not load brochure visit counts.' } });
+  }
+});
+
+router.post('/stores/:storeId/brochure-visits', brochureVisitLimiter, async (req: Request, res: Response) => {
+  const parsed = BrochureVisitSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: { code: 'INVALID_VISITOR_ID', message: 'A valid browser visit ID is required.' } });
+  }
+
+  try {
+    const [stores] = await db.execute<RowDataPacket[]>('SELECT id FROM stores WHERE id = ?', [req.params.storeId]);
+    if (!stores.length) return res.status(404).json({ error: { code: 'STORE_NOT_FOUND', message: 'This store brochure was not found.' } });
+
+    const [result] = await db.execute<ResultSetHeader>(
+      'INSERT IGNORE INTO brochure_visitors (store_id, visitor_id) VALUES (?, ?)',
+      [req.params.storeId, parsed.data.visitorId]
+    );
+    return res.status(result.affectedRows > 0 ? 201 : 200).json({ recorded: result.affectedRows > 0 });
+  } catch {
+    return res.status(500).json({ error: { code: 'BROCHURE_VISIT_FAILED', message: 'Could not record this brochure visit.' } });
+  }
+});
 
 const PublishSchema = z.object({
   storeId: z.string().min(1).max(64),
@@ -125,13 +171,17 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/brochure/publish', async (req: Request, res: Response) => {
+router.post('/brochure/publish', requireRetailer, async (req: Request, res: Response) => {
   const parsed = PublishSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: { code: 'INVALID_PUBLISH_DATA', message: 'Check the approved product details and prices.' } });
   }
 
   const { storeId, items } = parsed.data;
+  const session = getRetailerSession(req);
+  if (!session || session.storeId !== storeId) {
+    return res.status(403).json({ error: { code: 'STORE_ACCESS_DENIED', message: 'You can only publish listings for your own store.' } });
+  }
   const connection = await db.getConnection();
   try {
     const [stores] = await connection.execute<RowDataPacket[]>('SELECT id FROM stores WHERE id = ?', [storeId]);

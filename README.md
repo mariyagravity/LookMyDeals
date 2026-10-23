@@ -32,7 +32,7 @@ Optional server integrations can be configured in `.env`:
 
 Start the MySQL module in the XAMPP Control Panel and make sure the `lookmydeals` database exists. Configure `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` in the root `.env` file. The local XAMPP defaults are already listed in `.env.example`.
 
-The schema is managed by [`backend/sql/001_init_mysql.sql`](backend/sql/001_init_mysql.sql) and [`backend/sql/002_catalog_dates_and_requests.sql`](backend/sql/002_catalog_dates_and_requests.sql). Apply migrations and seed the demo catalog with:
+The schema is managed by the SQL migrations in `backend/sql/`. Apply migrations and seed the demo catalog with:
 
 ```bash
 npm run db:migrate
@@ -42,6 +42,10 @@ npm run db:seed
 The backend checks its MySQL connection on startup and reports the connection at `GET /api/health`.
 
 The shopper catalog, retailer-approved brochure listings, and offer requests are loaded from and saved to MySQL. The reminder cart and demo deal claims remain browser-local.
+
+### Retailer Demo Login
+
+Open `http://localhost:5173/retailer` and sign in with username `lulu`. Set `DEMO_LULU_PASSWORD` in your local, untracked `.env` file. The demo session is held in backend memory, expires after 8 hours, and is disabled when `NODE_ENV=production`. The dashboard API scopes listings, brochure metrics, and publishing to LuLu Hypermarket in Edappally. Customer requests are filtered by the store's service area because shopper requests are not assigned to a specific retailer.
 
 ### 3. Run Locally
 

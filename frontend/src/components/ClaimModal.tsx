@@ -40,7 +40,7 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
     expiry.setDate(now.getDate() + 7); // 7 day validity
 
     const newClaim: OfferClaim = {
-      id: `claim_${Date.now()}`,
+      id: crypto.randomUUID(),
       listingId: listing.id,
       productName: listing.product.name,
       storeName: listing.store.name,

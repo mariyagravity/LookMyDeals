@@ -7,6 +7,8 @@ const sqlDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sq
 const migrations = [
   '001_init_mysql.sql',
   '002_catalog_dates_and_requests.sql',
+  '003_brochure_visitors.sql',
+  '004_listing_claim_events.sql',
 ];
 
 async function migrate() {

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { createRateLimiter } from '../middleware/rateLimit';
+import { requireRetailer } from '../middleware/retailerSession';
 
 const router = Router();
 const upload = multer({
@@ -34,7 +35,7 @@ function detectMimeType(buffer: Buffer): string | null {
   return null;
 }
 
-router.post('/extract', createRateLimiter(5, 60_000), upload.single('file'), async (req: Request, res: Response) => {
+router.post('/extract', requireRetailer, createRateLimiter(5, 60_000), upload.single('file'), async (req: Request, res: Response) => {
   const file = req.file;
   if (!file) {
     return res.status(400).json({ error: { code: 'NO_FILE', message: 'No brochure file provided.' } });

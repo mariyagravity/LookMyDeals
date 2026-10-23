@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { RowDataPacket } from 'mysql2';
 import { z } from 'zod';
 import { db } from '../db';
+import { getRetailerSession, requireRetailer } from '../middleware/retailerSession';
 
 const router = Router();
 
@@ -16,13 +17,17 @@ const RequestSchema = z.object({
   contactMasked: z.string().max(20).optional(),
 });
 
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', requireRetailer, async (req: Request, res: Response) => {
+  const session = getRetailerSession(req);
+  if (!session) return res.status(401).json({ error: { code: 'RETAILER_LOGIN_REQUIRED', message: 'Sign in to view customer requests.' } });
   try {
+    const [stores] = await db.execute<RowDataPacket[]>('SELECT locality, pin_code FROM stores WHERE id = ?', [session.storeId]);
+    if (!stores.length) return res.status(403).json({ error: { code: 'RETAILER_STORE_UNAVAILABLE', message: 'The retailer store is no longer available.' } });
     const [rows] = await db.query<RowDataPacket[]>(`
       SELECT id, item_name, brand, category, locality, pin_code, target_price_minor,
              contact_reference, status, created_at
-      FROM offer_requests ORDER BY created_at DESC
-    `);
+      FROM offer_requests WHERE pin_code = ? OR LOWER(locality) = LOWER(?) ORDER BY created_at DESC
+    `, [String(stores[0].pin_code), String(stores[0].locality)]);
     return res.json(rows.map((row) => ({
       id: String(row.id),
       itemName: String(row.item_name),

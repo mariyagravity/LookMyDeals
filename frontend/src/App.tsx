@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import {
   EnrichedListing,
   CartItem,
   Category,
-  BrochureProductCandidate,
+  OfferClaim,
   Locality,
   Store,
 } from './types';
@@ -16,7 +16,6 @@ import { ClaimModal } from './components/ClaimModal';
 import { ReminderCartDrawer } from './components/ReminderCartDrawer';
 import { RequestOfferModal } from './components/RequestOfferModal';
 import { ExternalResults } from './components/ExternalResults';
-import { RetailerDashboard } from './pages/RetailerDashboard';
 import {
   ShoppingBag,
   Search,
@@ -28,9 +27,24 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
+const PublicBrochure = lazy(() => import('./pages/PublicBrochure').then((module) => ({ default: module.PublicBrochure })));
+const RetailerPortal = lazy(() => import('./pages/RetailerPortal').then((module) => ({ default: module.RetailerPortal })));
+
 export default function App() {
-  // Navigation mode: 'shopper' or 'retailer'
-  const [viewMode, setViewMode] = useState<'shopper' | 'retailer'>('shopper');
+  const pathname = window.location.pathname;
+  if (pathname.replace(/\/$/, '') === '/retailer') {
+    return <Suspense fallback={<div className="min-h-screen bg-slate-50 p-8 text-sm text-slate-600">Loading retailer sign in…</div>}><RetailerPortal /></Suspense>;
+  }
+  const brochureMatch = pathname.match(/^\/brochure\/([^/]+)\/?$/);
+  if (brochureMatch) {
+    let storeId = brochureMatch[1];
+    try { storeId = decodeURIComponent(storeId); } catch { /* The page renders a safe not-found state. */ }
+    return <Suspense fallback={<div className="min-h-screen bg-slate-50 p-8 text-sm text-slate-600">Loading store brochure…</div>}><PublicBrochure storeId={storeId} /></Suspense>;
+  }
+  return <ShopperApp />;
+}
+
+function ShopperApp() {
   const [shopperTab, setShopperTab] = useState<'local' | 'external'>('local');
 
   // Filter state
@@ -73,18 +87,6 @@ export default function App() {
   useEffect(() => {
     saveCartToStorage(cartItems);
   }, [cartItems]);
-
-  // Save approved brochure listings through the database API, then refresh the shared catalog.
-  const handleBrochureItemsPublished = async (newItems: BrochureProductCandidate[], storeId: string) => {
-    const response = await fetch('/api/catalog/brochure/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storeId, items: newItems }),
-    });
-    const result = await readApiJson(response);
-    if (!response.ok) throw new Error(result.error?.message || 'Could not publish these listings.');
-    await loadCatalog();
-  };
 
   const allListings = catalog.listings;
 
@@ -176,6 +178,14 @@ export default function App() {
     setCartItems([]);
   };
 
+  const handleClaimSuccess = (claim: OfferClaim) => {
+    void fetch('/api/claims', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ claimId: claim.id, listingId: claim.listingId }),
+    }).catch(() => undefined);
+  };
+
   const totalCartCount = cartItems.reduce((acc, i) => acc + i.quantity, 0);
 
   return (
@@ -184,7 +194,7 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-white border-b border-surface-border shadow-xs">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           {/* Brand Logo & Tagline */}
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setViewMode('shopper')}>
+          <a href="/" className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-white shadow-xs">
               <Tag className="w-5 h-5" />
             </div>
@@ -199,32 +209,28 @@ export default function App() {
                 In-Store Supermarket Price Comparison
               </p>
             </div>
-          </div>
+          </a>
 
           {/* Right Header Controls: Locality, Mode Toggle & Cart */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Locality Selector */}
-            {viewMode === 'shopper' && (
-              <div className="hidden sm:block">
-                <LocalitySelector
-                  selectedLocalityId={selectedLocalityId}
-                  onSelectLocality={setSelectedLocalityId}
-                  localities={catalog.localities}
-                />
-              </div>
-            )}
+            <div className="hidden sm:block">
+              <LocalitySelector
+                selectedLocalityId={selectedLocalityId}
+                onSelectLocality={setSelectedLocalityId}
+                localities={catalog.localities}
+              />
+            </div>
 
             {/* Request an Offer Button */}
-            {viewMode === 'shopper' && (
-              <button
-                type="button"
-                onClick={() => setIsRequestModalOpen(true)}
-                className="touch-target px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg flex items-center gap-1.5 transition-colors"
-              >
-                <PlusCircle className="w-4 h-4 text-primary" />
-                <span className="hidden md:inline">Request Offer</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setIsRequestModalOpen(true)}
+              className="touch-target px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg flex items-center gap-1.5 transition-colors"
+            >
+              <PlusCircle className="w-4 h-4 text-primary" />
+              <span className="hidden md:inline">Request Offer</span>
+            </button>
 
             {/* Reminder Cart Trigger */}
             <button
@@ -242,24 +248,17 @@ export default function App() {
               )}
             </button>
 
-            {/* Mode Switcher: Shopper Discovery vs Retailer Dashboard */}
-            <button
-              type="button"
-              onClick={() => setViewMode(viewMode === 'shopper' ? 'retailer' : 'shopper')}
-              className={`touch-target px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors ${
-                viewMode === 'retailer'
-                  ? 'bg-ink text-white'
-                  : 'bg-primary/10 text-primary-strong hover:bg-primary/20 border border-primary/20'
-              }`}
+            <a
+              href="/retailer"
+              className="touch-target px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors bg-primary/10 text-primary-strong hover:bg-primary/20 border border-primary/20"
             >
               <StoreIcon className="w-4 h-4" />
-              <span>{viewMode === 'shopper' ? 'Retailer Portal' : 'Shopper View'}</span>
-            </button>
+              <span>Retailer Portal</span>
+            </a>
           </div>
         </div>
 
         {/* Mobile Locality bar */}
-        {viewMode === 'shopper' && (
           <div className="sm:hidden px-4 py-2 bg-slate-50 border-t border-surface-border flex items-center justify-between">
             <span className="text-xs text-ink-muted">Locality:</span>
             <LocalitySelector
@@ -268,22 +267,11 @@ export default function App() {
               localities={catalog.localities}
             />
           </div>
-        )}
       </header>
 
       {/* Main Container */}
       <main className="mx-auto w-full max-w-[1660px] px-4 py-6 flex-1">
-        {viewMode === 'retailer' ? (
-          /* Retailer Dashboard Page */
-          <RetailerDashboard
-            listings={allListings}
-            stores={catalog.stores}
-            categories={catalog.categories}
-            onBrochureItemsPublished={handleBrochureItemsPublished}
-          />
-        ) : (
-          /* Shopper Discovery Page */
-          <div className="space-y-6">
+        <div className="space-y-6">
             {/* Hero & Search Banner */}
             <div className="bg-gradient-to-r from-teal-900 via-primary-dark to-slate-900 rounded-2xl p-6 sm:p-8 text-white shadow-md relative overflow-hidden">
               <div className="relative z-10 max-w-2xl">
@@ -439,8 +427,7 @@ export default function App() {
                 )}
               </div>
             )}
-          </div>
-        )}
+        </div>
       </main>
 
       {/* Persistent Footer */}
@@ -483,6 +470,7 @@ export default function App() {
       <ClaimModal
         listing={claimingListing}
         onClose={() => setClaimingListing(null)}
+        onClaimSuccess={handleClaimSuccess}
       />
 
       {/* Request an Offer Modal */}

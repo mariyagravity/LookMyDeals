@@ -2,7 +2,7 @@ import React from 'react';
 import { EnrichedListing } from '../types';
 import { SourceBadge } from './SourceBadge';
 import { formatINR, formatDate } from '../lib/format';
-import { MapPin, Calendar, Plus, Ticket, Check } from 'lucide-react';
+import { MapPin, Calendar, Plus, Ticket, Check, BookOpen } from 'lucide-react';
 
 interface DealCardProps {
   listing: EnrichedListing;
@@ -67,9 +67,10 @@ export const DealCard: React.FC<DealCardProps> = ({
             {storeInitials}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-ink truncate leading-tight">
-              {store.name}
-            </p>
+            <a href={`/brochure/${encodeURIComponent(store.id)}`} className="group/store inline-flex min-h-7 items-center gap-1 text-sm font-semibold text-ink hover:text-primary-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" aria-label={`View ${store.name} offers brochure`}>
+              <span className="truncate leading-tight">{store.name}</span>
+              <BookOpen className="h-3.5 w-3.5 shrink-0 text-primary opacity-70 group-hover/store:opacity-100" />
+            </a>
             <p className="text-xs text-ink-muted flex items-center gap-1 truncate">
               <MapPin className="w-3 h-3 shrink-0 text-slate-400" />
               {locality.name} ({locality.pinCode})

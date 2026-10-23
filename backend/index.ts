@@ -80,8 +80,9 @@ if (process.env.NODE_ENV !== 'test') {
         console.log(`[LookMyDeals Backend] connected to MySQL and running on http://localhost:${PORT}`);
       });
     })
-    .catch(() => {
-      console.error('[LookMyDeals Backend] MySQL connection failed. Check DB_HOST, DB_PORT, DB_NAME, DB_USER, and DB_PASSWORD.');
+    .catch((error: unknown) => {
+      console.error('[LookMyDeals Backend] MySQL connection failed:', error instanceof Error ? error.message : error);
+      console.error('Check DB_HOST, DB_PORT, DB_NAME, DB_USER, and DB_PASSWORD in .env');
       process.exit(1);
     });
 }

@@ -72,11 +72,11 @@ export const BrochureUpload: React.FC<BrochureUploadProps> = ({
             AI Brochure Digitizer
           </h3>
           <p className="text-xs text-ink-muted">
-            Upload a flyer image for extraction. PDF extraction is not enabled yet; every returned candidate still needs review.
+            Upload a PDF or flyer image. The AI finds product details and images; verify every crop and price before publishing.
           </p>
         </div>
         <span className="text-[11px] font-semibold text-ink-muted bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-          Max 10 MB · JPG / PNG live · PDF pending
+          Max 10 MB · PDF / JPG / PNG · 10 PDF pages max
         </span>
       </div>
 

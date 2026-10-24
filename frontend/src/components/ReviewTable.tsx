@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { PointerEvent, useEffect, useState } from 'react';
 import { BrochureProductCandidate, Category } from '../types';
-import { Check, AlertTriangle, ShieldCheck, Edit2, Sparkles } from 'lucide-react';
+import { Check, AlertTriangle, ShieldCheck, Edit2, Sparkles, Trash2, Crop, X } from 'lucide-react';
+import { cropBrochureProducts, renderBrochurePagePreview } from '../lib/brochureCrops';
 
 interface ReviewTableProps {
   candidates: BrochureProductCandidate[];
   onUpdateCandidate: (updated: BrochureProductCandidate) => void;
   onApproveAndPublish: (approvedCandidates: BrochureProductCandidate[]) => void;
+  onDeleteCandidate: (candidate: BrochureProductCandidate) => Promise<void>;
+  sourceFile: File | null;
+  onSaveCrop: (candidate: BrochureProductCandidate, cropBox: NonNullable<BrochureProductCandidate['cropBox']>, blob: Blob) => Promise<void>;
   canPublish: boolean;
   categories: Category[];
 }
@@ -14,10 +18,63 @@ export const ReviewTable: React.FC<ReviewTableProps> = ({
   candidates,
   onUpdateCandidate,
   onApproveAndPublish,
+  onDeleteCandidate,
+  sourceFile,
+  onSaveCrop,
   canPublish,
   categories,
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [cropCandidateId, setCropCandidateId] = useState<string | null>(null);
+  const [pagePreview, setPagePreview] = useState('');
+  const [cropBox, setCropBox] = useState<NonNullable<BrochureProductCandidate['cropBox']> | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [savingCrop, setSavingCrop] = useState(false);
+
+  const cropCandidate = candidates.find((candidate) => candidate.id === cropCandidateId) || null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!sourceFile || !cropCandidate) { setPagePreview(''); return; }
+    renderBrochurePagePreview(sourceFile, cropCandidate.pageNumber || 1)
+      .then((url) => { if (!cancelled) setPagePreview(url); })
+      .catch(() => { if (!cancelled) setPagePreview(''); });
+    return () => { cancelled = true; };
+  }, [sourceFile, cropCandidate?.id, cropCandidate?.pageNumber]);
+
+  const pointOnPage = (event: PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
+  };
+  const startCropDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const point = pointOnPage(event);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragStart(point);
+    setCropBox({ x: point.x, y: point.y, width: 0.01, height: 0.01 });
+  };
+  const moveCropDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (!dragStart) return;
+    const point = pointOnPage(event);
+    setCropBox({ x: Math.min(point.x, dragStart.x), y: Math.min(point.y, dragStart.y), width: Math.max(0.01, Math.abs(point.x - dragStart.x)), height: Math.max(0.01, Math.abs(point.y - dragStart.y)) });
+  };
+  const finishCropDrag = (event: PointerEvent<HTMLDivElement>) => {
+    moveCropDrag(event);
+    setDragStart(null);
+  };
+
+  const saveCrop = async () => {
+    if (!sourceFile || !cropCandidate || !cropBox) return;
+    setSavingCrop(true);
+    try {
+      const edited = { ...cropCandidate, cropBox };
+      const crops = await cropBrochureProducts(sourceFile, [edited]);
+      const blob = crops.get(cropCandidate.id);
+      if (!blob) throw new Error('Select the product area before saving its crop.');
+      await onSaveCrop(cropCandidate, cropBox, blob);
+      setCropCandidateId(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not save this crop.');
+    } finally { setSavingCrop(false); }
+  };
 
   if (candidates.length === 0) {
     return null;
@@ -182,6 +239,7 @@ export const ReviewTable: React.FC<ReviewTableProps> = ({
                       </div>
                     ) : (
                       <div>
+                        {c.cropPreviewUrl ? <img src={c.cropPreviewUrl} alt={`Crop of ${c.productName}`} className="mb-2 h-16 w-16 rounded-lg border border-slate-200 bg-white object-contain" /> : <span className="mb-2 flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-amber-300 bg-amber-50 px-1 text-center text-[9px] font-semibold text-amber-800">Crop unavailable</span>}
                         <p className="font-bold text-ink leading-tight">{c.productName}</p>
                         <p className="text-[11px] text-ink-muted">Brand: {c.brand || 'Unspecified'}</p>
                       </div>
@@ -306,6 +364,7 @@ export const ReviewTable: React.FC<ReviewTableProps> = ({
                   {/* Action buttons */}
                   <td className="py-3 px-3 whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-1.5">
+                      <button type="button" disabled={!sourceFile} onClick={() => { setCropBox(c.cropBox || { x: 0.1, y: 0.1, width: 0.3, height: 0.3 }); setCropCandidateId(c.id); }} className="p-1.5 text-teal-700 hover:bg-teal-50 rounded disabled:opacity-40" title="Adjust product crop" aria-label={`Adjust crop for ${c.productName}`}><Crop className="w-4 h-4" /></button>
                       <button
                         type="button"
                         onClick={() => setEditingId(isEditing ? null : c.id)}
@@ -313,6 +372,20 @@ export const ReviewTable: React.FC<ReviewTableProps> = ({
                         title={isEditing ? 'Save inline changes' : 'Edit row'}
                       >
                         {isEditing ? <Check className="w-4 h-4 text-emerald-600" /> : <Edit2 className="w-3.5 h-3.5" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Delete ${c.productName} from this brochure review?`)) {
+                            void onDeleteCandidate(c).catch((error: unknown) => alert(error instanceof Error ? error.message : 'Could not delete this item.'));
+                          }
+                        }}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        title="Delete extracted item"
+                        aria-label={`Delete ${c.productName}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
 
                       <button
@@ -334,6 +407,17 @@ export const ReviewTable: React.FC<ReviewTableProps> = ({
           </tbody>
         </table>
       </div>
+
+      {cropCandidate && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label={`Adjust crop for ${cropCandidate.productName}`}>
+        <section className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <header className="flex items-center justify-between border-b border-slate-200 p-4"><div><h2 className="font-bold text-slate-900">Crop product image</h2><p className="text-xs text-slate-600">Drag a tight rectangle around {cropCandidate.productName}. Leave out prices, labels, and neighboring items.</p></div><button type="button" onClick={() => setCropCandidateId(null)} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Close crop editor"><X className="h-5 w-5" /></button></header>
+          <div className="min-h-0 overflow-auto bg-slate-100 p-3 text-center">{pagePreview ? <div className="relative mx-auto inline-block max-w-full cursor-crosshair touch-none select-none" onPointerDown={startCropDrag} onPointerMove={moveCropDrag} onPointerUp={finishCropDrag}>
+            <img src={pagePreview} alt={`Original brochure page for ${cropCandidate.productName}`} className="block max-h-[70vh] max-w-full object-contain" draggable={false} />
+            {cropBox && <div className="pointer-events-none absolute border-2 border-teal-600 bg-teal-400/15 shadow-[0_0_0_9999px_rgba(15,23,42,.22)]" style={{ left: `${cropBox.x * 100}%`, top: `${cropBox.y * 100}%`, width: `${cropBox.width * 100}%`, height: `${cropBox.height * 100}%` }} />}
+          </div> : <p className="p-8 text-sm text-slate-600">Could not render this brochure page.</p>}</div>
+          <footer className="flex items-center justify-between gap-3 border-t border-slate-200 p-4"><div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded border bg-white">{cropCandidate.cropPreviewUrl && <img src={cropCandidate.cropPreviewUrl} alt="Current crop" className="h-full w-full object-contain" />}</div><div className="flex gap-2"><button type="button" onClick={() => setCropCandidateId(null)} className="min-h-10 rounded-lg border border-slate-300 px-4 text-sm font-semibold">Cancel</button><button type="button" disabled={savingCrop || !cropBox || !pagePreview} onClick={() => void saveCrop()} className="min-h-10 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white disabled:opacity-50">{savingCrop ? 'Saving…' : 'Save crop'}</button></div></footer>
+        </section>
+      </div>}
 
       {/* Review Guidelines Footnote */}
       <div className="p-3 bg-surface border-t border-surface-border text-[11px] text-ink-muted flex items-center justify-between">

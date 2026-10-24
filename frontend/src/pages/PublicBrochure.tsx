@@ -87,6 +87,7 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
         {listings.length ? sections.map(([category, categoryListings]) => <section key={category} className="space-y-3">
           <div className="flex items-end justify-between"><h2 className="text-xl font-bold">{category}</h2><span className="text-sm text-slate-500">{categoryListings.length} {categoryListings.length === 1 ? 'offer' : 'offers'}</span></div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{categoryListings.map((listing) => <article key={listing.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            {listing.product.image && <img src={listing.product.image} alt={`${listing.product.name} product`} loading="lazy" className="mb-3 h-40 w-full rounded-lg bg-slate-50 object-contain" />}
             <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{listing.product.brand || category}</p>
             <h3 className="mt-1 text-lg font-bold">{listing.product.name}</h3>
             <p className="mt-1 text-sm text-slate-500">{listing.product.packSize}</p>

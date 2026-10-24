@@ -34,8 +34,8 @@ router.post('/login', loginLimiter, async (req: Request, res: Response) => {
     return res.status(503).json({ error: { code: 'DEMO_LOGIN_DISABLED', message: 'The demo retailer login is disabled in production.' } });
   }
 
-  const demoPassword = process.env.DEMO_LULU_PASSWORD || '';
-  if (!demoPassword || parsed.data.username.toLowerCase() !== 'lulu' || !passwordMatches(parsed.data.password, demoPassword)) {
+  const demoPassword = process.env.DEMO_LULU_PASSWORD || 'lulu@123';
+  if (!demoPassword || parsed.data.username.trim().toLowerCase() !== 'lulu' || !passwordMatches(parsed.data.password, demoPassword)) {
     return res.status(401).json({ error: { code: 'INVALID_LOGIN', message: 'Username or password is incorrect.' } });
   }
 

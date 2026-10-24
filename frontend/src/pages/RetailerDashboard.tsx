@@ -3,7 +3,7 @@ import { AlertCircle, BookOpen, CheckCircle2, ExternalLink, LayoutDashboard, Mes
 import { BrochureProductCandidate, Category, EnrichedListing, OfferRequest, Store as StoreType } from '../types';
 import { BrochureUpload } from '../components/BrochureUpload';
 import { ReviewTable } from '../components/ReviewTable';
-import { formatDate, formatINR } from '../lib/format';
+import { formatINR } from '../lib/format';
 import { readApiJson } from '../lib/api';
 import { addGridFallbackCropBoxes, cropBrochureProducts, validateBrochureFile } from '../lib/brochureCrops';
 
@@ -276,6 +276,8 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
         const cropForm = new FormData();
         for (const [candidateId, blob] of crops) {
           cropForm.append('crops', blob, `${candidateId}.jpg`);
+          const candidate = reviewedCandidates.find((item) => item.id === candidateId);
+          if (candidate?.cropBox) cropForm.append(`cropBox_${candidateId}`, JSON.stringify(candidate.cropBox));
           const previewUrl = URL.createObjectURL(blob);
           cropPreviewUrls.current.push(previewUrl);
           reviewedCandidates = reviewedCandidates.map((candidate) => candidate.id === candidateId ? { ...candidate, cropPreviewUrl: previewUrl } : candidate);
@@ -622,9 +624,6 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
               <div className="border-t border-slate-100 p-4"><h4 className="mb-3 text-sm font-bold text-slate-800">Products in this brochure</h4>{item.items.length ? <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">{item.items.map((product) => <div key={product.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"><div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">{product.cropUrl ? <img src={product.cropUrl} alt={product.productName} className="h-full w-full object-contain" /> : <Package className="h-5 w-5 text-slate-400" />}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-900">{product.productName}</p><p className="truncate text-xs text-slate-500">{[product.brand, product.category, product.packSize].filter(Boolean).join(' · ') || 'Category not set'} · <span className="capitalize">{product.status.replace(/_/g, ' ')}</span></p>{product.couponCode && <p className="mt-0.5 text-[11px] font-mono font-bold text-amber-900">🎟️ {product.couponCode}</p>}</div><div className="shrink-0 text-right">{product.offerPriceMinor !== null && <p className="text-sm font-bold text-teal-800">{formatINR(product.offerPriceMinor)}</p>}{product.regularPriceMinor !== null && <p className="text-xs text-slate-500 line-through">{formatINR(product.regularPriceMinor)}</p>}</div></div>)}</div> : <p className="text-sm text-slate-500">No product details saved for this brochure.</p>}</div>
             </article>)}</div> : <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center"><BookOpen className="mx-auto h-8 w-8 text-teal-700" /><p className="mt-3 font-semibold">No uploaded brochures yet</p><p className="mt-1 text-sm text-slate-500">Uploaded source files and extracted product data will be saved here after extraction.</p><button type="button" onClick={() => setSection('brochure')} className="mt-4 min-h-11 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800">Upload a brochure</button></div>}
           </Panel>
-          {filteredListings.length > 0 && <Panel title="Offers in the current brochure" subtitle="Published offers included in the digital brochure.">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{filteredListings.map((item) => <article key={item.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">{item.product.name}</h3><p className="mt-1 text-sm text-slate-500">{[item.product.brand, item.product.category, item.product.packSize].filter(Boolean).join(' · ')}</p></div><span className="shrink-0 font-bold text-teal-800">{formatINR(item.offerPriceMinor || item.listedPriceMinor)}</span></div><div className="mt-3 flex items-center justify-between"><p className="text-xs text-slate-500">Valid until {formatDate(item.validUntil)}</p>{item.couponCode ? <button type="button" onClick={() => handleOpenListingCoupon(item)} className="font-mono text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded hover:bg-amber-100 cursor-pointer">🎟️ {item.couponCode}</button> : <button type="button" onClick={() => handleOpenListingCoupon(item)} className="text-xs font-semibold text-teal-700 hover:underline cursor-pointer">+ Allot coupon</button>}</div></article>)}</div>
-          </Panel>}
         </section>}
 
         {section === 'brochure' && <section className="space-y-5">

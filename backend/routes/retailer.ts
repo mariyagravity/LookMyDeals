@@ -80,7 +80,7 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
       FROM store_listings l
       JOIN stores s ON s.id = l.store_id
       JOIN products p ON p.id = l.product_id
-      WHERE l.store_id = ?
+      WHERE l.store_id = ? AND l.source_type = 'brochure'
       ORDER BY l.id
     `, [session.storeId]);
 

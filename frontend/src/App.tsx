@@ -630,7 +630,28 @@ export default function App() {
                 return (
                   <div
                     key={store.id}
-                    onClick={() => setSelectedStore(isSelected ? null : store.name)}
+                    onClick={() => {
+                      if (store.id === 'lulu') {
+                        const luluStore = catalog.stores.find((catalogStore) => catalogStore.name.toLowerCase().includes('lulu'));
+                        if (luluStore) {
+                          window.location.href = `/brochure/${encodeURIComponent(luluStore.id)}`;
+                          return;
+                        }
+                      }
+                      setSelectedStore(isSelected ? null : store.name);
+                    }}
+                    role="link"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        if (store.id === 'lulu') {
+                          const luluStore = catalog.stores.find((catalogStore) => catalogStore.name.toLowerCase().includes('lulu'));
+                          if (luluStore) { window.location.href = `/brochure/${encodeURIComponent(luluStore.id)}`; return; }
+                        }
+                        setSelectedStore(isSelected ? null : store.name);
+                      }
+                    }}
                     className="flex flex-col items-center group cursor-pointer"
                   >
                     <div

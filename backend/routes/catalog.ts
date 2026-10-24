@@ -200,6 +200,88 @@ router.get('/products/:productId/image', async (req: Request, res: Response) => 
   }
 });
 
+router.get('/stores/:storeId/brochures', async (req: Request, res: Response) => {
+  try {
+    const storeId = String(req.params.storeId);
+    const [rows] = await db.execute<RowDataPacket[]>(`
+      SELECT b.id, b.original_file_name, b.mime_type, b.uploaded_at, b.expires_at,
+             bi.id AS item_id, bi.product_name, bi.brand, bi.pack_size, bi.category,
+             bi.listed_price_minor, bi.offer_price_minor, bi.valid_until, bi.crop_storage_key
+      FROM brochures b
+      LEFT JOIN brochure_items bi ON bi.brochure_id = b.id AND bi.review_status = 'approved'
+      WHERE b.store_id = ? AND b.processing_status = 'approved'
+      ORDER BY b.uploaded_at DESC, bi.created_at, bi.product_name
+    `, [storeId]);
+    const brochures = new Map<string, { id: string; fileName: string; mimeType: string; uploadedAt: string; expiresAt: string; fileUrl: string; items: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const id = String(row.id);
+      if (!brochures.has(id)) {
+        brochures.set(id, {
+          id,
+          fileName: String(row.original_file_name),
+          mimeType: String(row.mime_type),
+          uploadedAt: row.uploaded_at instanceof Date ? row.uploaded_at.toISOString() : String(row.uploaded_at),
+          expiresAt: row.expires_at instanceof Date ? row.expires_at.toISOString().slice(0, 10) : row.expires_at ? String(row.expires_at).slice(0, 10) : '',
+          fileUrl: `/api/catalog/stores/${encodeURIComponent(storeId)}/brochures/${encodeURIComponent(id)}/file`,
+          items: [],
+        });
+      }
+      if (row.item_id) {
+        brochures.get(id)!.items.push({
+          id: String(row.item_id),
+          productName: String(row.product_name),
+          brand: String(row.brand || ''),
+          packSize: String(row.pack_size || ''),
+          category: String(row.category || ''),
+          listedPriceMinor: row.listed_price_minor === null ? null : Number(row.listed_price_minor),
+          offerPriceMinor: row.offer_price_minor === null ? null : Number(row.offer_price_minor),
+          validUntil: row.valid_until ? (row.valid_until instanceof Date ? row.valid_until.toISOString().slice(0, 10) : String(row.valid_until).slice(0, 10)) : '',
+          cropUrl: row.crop_storage_key ? `/api/catalog/stores/${encodeURIComponent(storeId)}/brochures/${encodeURIComponent(id)}/items/${encodeURIComponent(String(row.item_id))}/crop` : '',
+        });
+      }
+    }
+    return res.json({ brochures: [...brochures.values()] });
+  } catch {
+    return res.status(500).json({ error: { code: 'STORE_BROCHURES_FAILED', message: 'Could not load this store’s brochures.' } });
+  }
+});
+
+router.get('/stores/:storeId/brochures/:brochureId/file', async (req: Request, res: Response) => {
+  try {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT storage_key, mime_type FROM brochures WHERE id = ? AND store_id = ? AND processing_status = \'approved\'',
+      [req.params.brochureId, req.params.storeId]
+    );
+    const row = rows[0];
+    const filePath = row ? path.resolve(uploadRoot, String(row.storage_key)) : '';
+    const relativePath = filePath ? path.relative(uploadRoot, filePath) : '';
+    if (!row || relativePath.startsWith('..') || path.isAbsolute(relativePath)) return res.status(404).end();
+    res.setHeader('Content-Type', String(row.mime_type));
+    res.setHeader('Content-Disposition', 'inline');
+    return res.sendFile(filePath, { dotfiles: 'deny' }, (error) => { if (error && !res.headersSent) res.status(404).end(); });
+  } catch {
+    return res.status(404).end();
+  }
+});
+
+router.get('/stores/:storeId/brochures/:brochureId/items/:itemId/crop', async (req: Request, res: Response) => {
+  try {
+    const [rows] = await db.execute<RowDataPacket[]>(`
+      SELECT bi.crop_storage_key FROM brochure_items bi JOIN brochures b ON b.id = bi.brochure_id
+      WHERE bi.id = ? AND b.id = ? AND b.store_id = ? AND b.processing_status = 'approved' AND bi.review_status = 'approved'
+    `, [req.params.itemId, req.params.brochureId, req.params.storeId]);
+    const storageKey = String(rows[0]?.crop_storage_key || '');
+    if (!storageKey.startsWith('brochure-crops/')) return res.status(404).end();
+    const filePath = path.resolve(uploadRoot, storageKey);
+    const relativePath = path.relative(uploadRoot, filePath);
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) return res.status(404).end();
+    res.setHeader('Content-Type', storageKey.endsWith('.png') ? 'image/png' : 'image/jpeg');
+    return res.sendFile(filePath, { dotfiles: 'deny' }, (error) => { if (error && !res.headersSent) res.status(404).end(); });
+  } catch {
+    return res.status(404).end();
+  }
+});
+
 router.post('/brochure/publish', requireRetailer, async (req: Request, res: Response) => {
   const parsed = PublishSchema.safeParse(req.body);
   if (!parsed.success) {

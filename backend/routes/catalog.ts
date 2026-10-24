@@ -209,12 +209,8 @@ router.get('/stores/:storeId/brochures', async (req: Request, res: Response) => 
              bi.listed_price_minor, bi.offer_price_minor, bi.valid_until, bi.crop_storage_key,
              bi.page_number, bi.crop_box
       FROM brochures b
-      LEFT JOIN brochure_items bi ON bi.brochure_id = b.id AND bi.review_status = 'approved'
-      WHERE b.store_id = ?
-        AND EXISTS (
-          SELECT 1 FROM brochure_items approved_item
-          WHERE approved_item.brochure_id = b.id AND approved_item.review_status = 'approved'
-        )
+      LEFT JOIN brochure_items bi ON bi.brochure_id = b.id AND bi.review_status != 'rejected'
+      WHERE b.store_id = ? AND b.processing_status != 'archived'
       ORDER BY b.uploaded_at DESC, bi.created_at, bi.product_name
     `, [storeId]);
     const brochures = new Map<string, { id: string; fileName: string; mimeType: string; uploadedAt: string; expiresAt: string; fileUrl: string; items: Record<string, unknown>[] }>();
@@ -266,11 +262,7 @@ router.get('/stores/:storeId/brochures/:brochureId/file', async (req: Request, r
   try {
     const [rows] = await db.execute<RowDataPacket[]>(
       `SELECT b.storage_key, b.mime_type FROM brochures b
-       WHERE b.id = ? AND b.store_id = ?
-         AND EXISTS (
-           SELECT 1 FROM brochure_items approved_item
-           WHERE approved_item.brochure_id = b.id AND approved_item.review_status = 'approved'
-         )`,
+       WHERE b.id = ? AND b.store_id = ? AND b.processing_status != 'archived'`,
       [req.params.brochureId, req.params.storeId]
     );
     const row = rows[0];
@@ -289,7 +281,7 @@ router.get('/stores/:storeId/brochures/:brochureId/items/:itemId/crop', async (r
   try {
     const [rows] = await db.execute<RowDataPacket[]>(`
       SELECT bi.crop_storage_key FROM brochure_items bi JOIN brochures b ON b.id = bi.brochure_id
-      WHERE bi.id = ? AND b.id = ? AND b.store_id = ? AND bi.review_status = 'approved'
+      WHERE bi.id = ? AND b.id = ? AND b.store_id = ? AND bi.review_status != 'rejected'
     `, [req.params.itemId, req.params.brochureId, req.params.storeId]);
     const storageKey = String(rows[0]?.crop_storage_key || '');
     if (!storageKey.startsWith('brochure-crops/')) return res.status(404).end();

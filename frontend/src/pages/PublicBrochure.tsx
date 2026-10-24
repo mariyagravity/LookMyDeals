@@ -268,8 +268,17 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({
                     <img
                       src={selectedBrochure.fileUrl}
                       alt={selectedBrochure.fileName}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
                       className="block h-auto max-h-[75vh] max-w-full object-contain rounded-lg"
                     />
+                    <div className="hidden h-64 w-full flex-col items-center justify-center p-6 text-center text-slate-400 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg">
+                      <BookOpen className="h-16 w-16 text-teal-600 mb-3" />
+                      <span className="text-sm font-semibold text-slate-600">{selectedBrochure.fileName}</span>
+                    </div>
                     {detailProducts
                       .filter((product) => product.pageNumber <= 1 && product.cropBox)
                       .map((product) => (
@@ -506,11 +515,22 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({
                             className="h-full w-full border-0 pointer-events-none"
                           />
                         ) : (
-                          <img
-                            src={brochure.fileUrl}
-                            alt={`Flyer: ${title}`}
-                            className="h-full w-full object-contain p-2 group-hover:scale-102 transition-transform duration-300"
-                          />
+                          <>
+                            <img
+                              src={brochure.fileUrl}
+                              alt={`Flyer: ${title}`}
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                if (fallback) fallback.style.display = 'flex';
+                              }}
+                              className="h-full w-full object-contain p-2 group-hover:scale-102 transition-transform duration-300"
+                            />
+                            <div className="hidden h-full w-full flex-col items-center justify-center p-6 text-center text-slate-400 bg-gradient-to-br from-slate-50 to-slate-100">
+                              <BookOpen className="h-12 w-12 text-teal-600 mb-2" />
+                              <span className="text-xs font-semibold text-slate-600 line-clamp-2">{title}</span>
+                            </div>
+                          </>
                         )}
                         <button
                           type="button"

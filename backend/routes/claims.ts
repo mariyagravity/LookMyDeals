@@ -17,7 +17,7 @@ router.post('/', claimLimiter, async (req: Request, res: Response) => {
 
   try {
     const [listingRows] = await db.execute<RowDataPacket[]>(
-      'SELECT id, store_id FROM store_listings WHERE id = ?',
+      'SELECT id, store_id, coupon_code FROM store_listings WHERE id = ?',
       [parsed.data.listingId]
     );
     if (!listingRows.length) return res.status(404).json({ error: { code: 'LISTING_NOT_FOUND', message: 'This offer is no longer available.' } });
@@ -26,7 +26,11 @@ router.post('/', claimLimiter, async (req: Request, res: Response) => {
       'INSERT IGNORE INTO listing_claim_events (id, listing_id, store_id) VALUES (?, ?, ?)',
       [parsed.data.claimId, parsed.data.listingId, String(listingRows[0].store_id)]
     );
-    return res.status(result.affectedRows > 0 ? 201 : 200).json({ recorded: result.affectedRows > 0, demo: true });
+    return res.status(result.affectedRows > 0 ? 201 : 200).json({
+      recorded: result.affectedRows > 0,
+      demo: true,
+      couponCode: listingRows[0].coupon_code ? String(listingRows[0].coupon_code) : undefined,
+    });
   } catch {
     return res.status(500).json({ error: { code: 'CLAIM_RECORD_FAILED', message: 'Could not record this demo claim.' } });
   }

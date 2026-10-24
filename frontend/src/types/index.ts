@@ -44,6 +44,7 @@ export interface StoreListing {
   verificationStatus: VerificationStatus;
   validFrom?: string;
   validUntil?: string;
+  couponCode?: string | null;
   priceCheckedAt: string;
 }
 
@@ -78,6 +79,7 @@ export interface OfferClaim {
   storeName: string;
   localityName: string;
   claimCode: string;
+  couponCode?: string;
   discountMinor: number;
   finalPriceMinor: number;
   claimedAt: string;
@@ -110,6 +112,7 @@ export interface BrochureProductCandidate {
   unit: string | null;
   regularPrice: number | null; // in Rupees
   offerPrice: number | null;   // in Rupees
+  couponCode?: string | null;
   validFrom: string | null;
   validUntil: string | null;
   pageNumber: number | null;

@@ -69,6 +69,7 @@ const PublishSchema = z.object({
     offerPrice: z.number().positive().nullable(),
     validFrom: z.string().date().nullable().optional(),
     validUntil: z.string().date().nullable().optional(),
+    couponCode: z.string().trim().max(50).nullable().optional(),
     notes: z.array(z.string().max(200)).max(10),
   }).refine((item) => item.regularPrice !== null || item.offerPrice !== null)
     .refine((item) => item.regularPrice === null || item.offerPrice === null || item.offerPrice <= item.regularPrice)
@@ -91,6 +92,7 @@ router.get('/', async (_req: Request, res: Response) => {
       SELECT
         l.id, l.store_id, l.product_id, l.listed_price_minor, l.offer_price_minor,
         l.currency, l.source_type, l.verification_status, l.valid_from, l.valid_until,
+        l.coupon_code,
         l.price_checked_at, p.image_storage_key, s.name AS store_name, s.locality, s.pin_code, s.address,
         s.verification_status AS store_verification_status,
         p.name AS product_name, p.brand, p.category, p.pack_size, p.unit
@@ -141,6 +143,7 @@ router.get('/', async (_req: Request, res: Response) => {
         verificationStatus: String(row.verification_status),
         validFrom: dateValue(row.valid_from),
         validUntil: dateValue(row.valid_until),
+        couponCode: row.coupon_code ? String(row.coupon_code) : undefined,
         priceCheckedAt: dateValue(row.price_checked_at) || '',
         product: {
           id: String(row.product_id),
@@ -236,23 +239,24 @@ router.post('/brochure/publish', requireRetailer, async (req: Request, res: Resp
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [productId, item.productName, item.brand || null, item.category, item.packSize || null, item.unit || null, candidateRows[0].crop_storage_key || null]
       );
+      const couponCode = item.couponCode ? item.couponCode.trim().toUpperCase() : null;
       await connection.execute(
         `INSERT INTO store_listings
           (id, store_id, product_id, listed_price_minor, offer_price_minor, currency,
-           source_type, verification_status, valid_from, valid_until, price_checked_at)
-         VALUES (?, ?, ?, ?, ?, 'INR', 'brochure', 'demo', ?, ?, CURRENT_DATE)`,
-        [listingId, storeId, productId, listedPriceMinor, offerPriceMinor, item.validFrom || null, item.validUntil || null]
+           source_type, verification_status, valid_from, valid_until, coupon_code, price_checked_at)
+         VALUES (?, ?, ?, ?, ?, 'INR', 'brochure', 'demo', ?, ?, ?, CURRENT_DATE)`,
+        [listingId, storeId, productId, listedPriceMinor, offerPriceMinor, item.validFrom || null, item.validUntil || null, couponCode]
       );
       await connection.execute(
         `UPDATE brochure_items
          SET product_name = ?, brand = ?, pack_size = ?, category = ?,
-             listed_price_minor = ?, offer_price_minor = ?, valid_from = ?, valid_until = ?,
+             listed_price_minor = ?, offer_price_minor = ?, coupon_code = ?, valid_from = ?, valid_until = ?,
              review_status = 'approved', review_notes = ?, published_listing_id = ?
          WHERE id = ? AND brochure_id = ?`,
         [
           item.productName, item.brand || null, item.packSize || null, item.category,
           item.regularPrice === null ? null : Math.round(item.regularPrice * 100),
-          offerPriceMinor, item.validFrom || null, item.validUntil || null,
+          offerPriceMinor, couponCode, item.validFrom || null, item.validUntil || null,
           JSON.stringify(item.notes), listingId, item.candidateId, brochureId,
         ]
       );

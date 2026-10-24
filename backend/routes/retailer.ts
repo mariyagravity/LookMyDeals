@@ -73,6 +73,7 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
     const [listingRows] = await db.execute<RowDataPacket[]>(`
       SELECT l.id, l.store_id, l.product_id, l.listed_price_minor, l.offer_price_minor,
              l.currency, l.source_type, l.verification_status, l.valid_from, l.valid_until,
+             l.coupon_code,
              l.price_checked_at, s.name AS store_name, s.locality, s.pin_code, s.address,
              s.verification_status AS store_verification_status,
              p.name AS product_name, p.brand, p.category, p.pack_size, p.unit
@@ -99,17 +100,17 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
     );
     const [brochureRows] = await db.execute<RowDataPacket[]>(`
       SELECT b.id, b.original_file_name, b.mime_type, b.file_size_bytes,
-             b.processing_status, b.uploaded_at, b.expires_at, COUNT(bi.id) AS item_count
+             b.processing_status, b.uploaded_at, b.expires_at, b.coupon_code, COUNT(bi.id) AS item_count
       FROM brochures b
       LEFT JOIN brochure_items bi ON bi.brochure_id = b.id
       WHERE b.store_id = ?
       GROUP BY b.id, b.original_file_name, b.mime_type, b.file_size_bytes,
-               b.processing_status, b.uploaded_at, b.expires_at
+               b.processing_status, b.uploaded_at, b.expires_at, b.coupon_code
       ORDER BY b.uploaded_at DESC
     `, [session.storeId]);
     const [brochureItemRows] = await db.execute<RowDataPacket[]>(`
       SELECT bi.id, bi.brochure_id, bi.product_name, bi.brand, bi.pack_size, bi.category,
-             bi.listed_price_minor, bi.offer_price_minor, bi.valid_from, bi.valid_until,
+             bi.listed_price_minor, bi.offer_price_minor, bi.coupon_code, bi.valid_from, bi.valid_until,
              bi.review_status, bi.crop_storage_key
       FROM brochure_items bi
       JOIN brochures b ON b.id = bi.brochure_id
@@ -140,6 +141,7 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
         verificationStatus: String(row.verification_status),
         validFrom: dateValue(row.valid_from),
         validUntil: dateValue(row.valid_until),
+        couponCode: row.coupon_code ? String(row.coupon_code) : undefined,
         priceCheckedAt: dateValue(row.price_checked_at) || '',
         product: {
           id: String(row.product_id),
@@ -185,6 +187,7 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
         status: String(row.processing_status),
         uploadedAt: row.uploaded_at instanceof Date ? row.uploaded_at.toISOString() : String(row.uploaded_at),
         expiresAt: dateValue(row.expires_at) || '',
+        couponCode: row.coupon_code ? String(row.coupon_code) : undefined,
         itemCount: Number(row.item_count || 0),
         items: (itemsByBrochure.get(String(row.id)) || []).map((item) => ({
           id: String(item.id),
@@ -194,6 +197,7 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
           category: String(item.category || ''),
           regularPriceMinor: item.listed_price_minor === null ? null : Number(item.listed_price_minor),
           offerPriceMinor: item.offer_price_minor === null ? null : Number(item.offer_price_minor),
+          couponCode: item.coupon_code ? String(item.coupon_code) : undefined,
           validFrom: dateValue(item.valid_from) || '',
           validUntil: dateValue(item.valid_until) || '',
           status: String(item.review_status),
@@ -245,6 +249,85 @@ router.patch('/brochures/:brochureId/expiry', requireRetailer, async (req: Reque
     return res.json({ updated: true, expiresAt: parsed.data.expiresAt || null });
   } catch {
     return res.status(500).json({ error: { code: 'BROCHURE_EXPIRY_UPDATE_FAILED', message: 'Could not update the brochure expiry date.' } });
+  }
+});
+
+const ListingCouponSchema = z.object({
+  couponCode: z.string().trim().max(50).nullable(),
+});
+
+router.patch('/listings/:listingId/coupon', requireRetailer, async (req: Request, res: Response) => {
+  const session = getRetailerSession(req);
+  if (!session) return res.status(401).json({ error: { code: 'RETAILER_LOGIN_REQUIRED', message: 'Sign in to manage coupons.' } });
+  const parsed = ListingCouponSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: { code: 'INVALID_COUPON', message: 'Enter a valid coupon code (max 50 chars).' } });
+
+  const cleanCode = parsed.data.couponCode && parsed.data.couponCode.trim().length > 0
+    ? parsed.data.couponCode.trim().toUpperCase()
+    : null;
+
+  try {
+    const [result] = await db.execute(
+      'UPDATE store_listings SET coupon_code = ? WHERE id = ? AND store_id = ?',
+      [cleanCode, req.params.listingId, session.storeId]
+    );
+    if ((result as { affectedRows?: number }).affectedRows === 0) {
+      return res.status(404).json({ error: { code: 'LISTING_NOT_FOUND', message: 'Offer listing was not found for your store.' } });
+    }
+    return res.json({ updated: true, listingId: req.params.listingId, couponCode: cleanCode });
+  } catch {
+    return res.status(500).json({ error: { code: 'COUPON_UPDATE_FAILED', message: 'Could not update coupon code.' } });
+  }
+});
+
+const BrochureCouponSchema = z.object({
+  couponCode: z.string().trim().max(50).nullable(),
+  applyToItems: z.boolean().optional(),
+});
+
+router.patch('/brochures/:brochureId/coupon', requireRetailer, async (req: Request, res: Response) => {
+  const session = getRetailerSession(req);
+  if (!session) return res.status(401).json({ error: { code: 'RETAILER_LOGIN_REQUIRED', message: 'Sign in to manage coupons.' } });
+  const parsed = BrochureCouponSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: { code: 'INVALID_COUPON', message: 'Enter a valid coupon code (max 50 chars).' } });
+
+  const cleanCode = parsed.data.couponCode && parsed.data.couponCode.trim().length > 0
+    ? parsed.data.couponCode.trim().toUpperCase()
+    : null;
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [result] = await connection.execute(
+      'UPDATE brochures SET coupon_code = ? WHERE id = ? AND store_id = ?',
+      [cleanCode, req.params.brochureId, session.storeId]
+    );
+    if ((result as { affectedRows?: number }).affectedRows === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: { code: 'BROCHURE_NOT_FOUND', message: 'Brochure was not found for your store.' } });
+    }
+
+    if (parsed.data.applyToItems) {
+      await connection.execute(
+        'UPDATE brochure_items SET coupon_code = ? WHERE brochure_id = ?',
+        [cleanCode, req.params.brochureId]
+      );
+      await connection.execute(
+        `UPDATE store_listings l
+         JOIN brochure_items bi ON bi.published_listing_id = l.id
+         SET l.coupon_code = ?
+         WHERE bi.brochure_id = ? AND l.store_id = ?`,
+        [cleanCode, req.params.brochureId, session.storeId]
+      );
+    }
+
+    await connection.commit();
+    return res.json({ updated: true, brochureId: req.params.brochureId, couponCode: cleanCode });
+  } catch {
+    await connection.rollback();
+    return res.status(500).json({ error: { code: 'BROCHURE_COUPON_FAILED', message: 'Could not update brochure coupon code.' } });
+  } finally {
+    connection.release();
   }
 });
 

@@ -33,6 +33,7 @@ interface RetailerBrochure {
   status: string;
   uploadedAt: string;
   expiresAt: string;
+  couponCode?: string;
   itemCount: number;
   items: {
     id: string;
@@ -42,6 +43,7 @@ interface RetailerBrochure {
     category: string;
     regularPriceMinor: number | null;
     offerPriceMinor: number | null;
+    couponCode?: string;
     validFrom: string;
     validUntil: string;
     status: string;
@@ -49,9 +51,10 @@ interface RetailerBrochure {
   }[];
 }
 
-type Section = 'dashboard' | 'brochures' | 'brochure' | 'requests';
+type Section = 'dashboard' | 'coupons' | 'brochures' | 'brochure' | 'requests';
 const navItems: { id: Section; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'coupons', label: 'Coupons & Deals', icon: Ticket },
   { id: 'brochures', label: 'Brochures', icon: BookOpen },
   { id: 'brochure', label: 'Upload / Edit', icon: Package },
   { id: 'requests', label: 'Customer Requests', icon: MessageSquare },
@@ -135,12 +138,111 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
     }
   };
 
+  // Coupon Allotment & Management State
+  const [couponModalListing, setCouponModalListing] = useState<EnrichedListing | null>(null);
+  const [couponInput, setCouponInput] = useState('');
+  const [couponSaving, setCouponSaving] = useState(false);
+  const [couponMessage, setCouponMessage] = useState('');
+  const [couponFilter, setCouponFilter] = useState<'all' | 'with_coupon' | 'without_coupon'>('all');
+
+  const [brochureCouponModal, setBrochureCouponModal] = useState<RetailerBrochure | null>(null);
+  const [brochureCouponInput, setBrochureCouponInput] = useState('');
+  const [brochureCouponApplyAll, setBrochureCouponApplyAll] = useState(true);
+  const [brochureCouponSaving, setBrochureCouponSaving] = useState(false);
+  const [brochureCouponMessage, setBrochureCouponMessage] = useState('');
+
+  const handleOpenListingCoupon = (item: EnrichedListing) => {
+    setCouponModalListing(item);
+    setCouponInput(item.couponCode || '');
+    setCouponMessage('');
+  };
+
+  const handleSaveListingCoupon = async () => {
+    if (!couponModalListing) return;
+    setCouponSaving(true);
+    setCouponMessage('');
+    try {
+      const code = couponInput.trim() ? couponInput.trim().toUpperCase() : null;
+      const response = await fetch(`/api/retailer/listings/${encodeURIComponent(couponModalListing.id)}/coupon`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ couponCode: code }),
+      });
+      const result = await readApiJson<{ error?: { message?: string } }>(response);
+      if (!response.ok) throw new Error(result.error?.message || 'Could not save coupon code.');
+      await onBrochureUploaded();
+      setCouponModalListing(null);
+    } catch (err) {
+      setCouponMessage(err instanceof Error ? err.message : 'Failed to save coupon code.');
+    } finally {
+      setCouponSaving(false);
+    }
+  };
+
+  const handleRemoveListingCoupon = async (listingId: string) => {
+    setCouponSaving(true);
+    setCouponMessage('');
+    try {
+      const response = await fetch(`/api/retailer/listings/${encodeURIComponent(listingId)}/coupon`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ couponCode: null }),
+      });
+      const result = await readApiJson<{ error?: { message?: string } }>(response);
+      if (!response.ok) throw new Error(result.error?.message || 'Could not remove coupon code.');
+      await onBrochureUploaded();
+      setCouponModalListing(null);
+    } catch (err) {
+      setCouponMessage(err instanceof Error ? err.message : 'Failed to remove coupon code.');
+    } finally {
+      setCouponSaving(false);
+    }
+  };
+
+  const handleOpenBrochureCoupon = (b: RetailerBrochure) => {
+    setBrochureCouponModal(b);
+    setBrochureCouponInput(b.couponCode || '');
+    setBrochureCouponApplyAll(true);
+    setBrochureCouponMessage('');
+  };
+
+  const handleSaveBrochureCoupon = async () => {
+    if (!brochureCouponModal) return;
+    setBrochureCouponSaving(true);
+    setBrochureCouponMessage('');
+    try {
+      const code = brochureCouponInput.trim() ? brochureCouponInput.trim().toUpperCase() : null;
+      const response = await fetch(`/api/retailer/brochures/${encodeURIComponent(brochureCouponModal.id)}/coupon`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ couponCode: code, applyToItems: brochureCouponApplyAll }),
+      });
+      const result = await readApiJson<{ error?: { message?: string } }>(response);
+      if (!response.ok) throw new Error(result.error?.message || 'Could not update brochure coupon code.');
+      await onBrochureUploaded();
+      setBrochureCouponModal(null);
+    } catch (err) {
+      setBrochureCouponMessage(err instanceof Error ? err.message : 'Failed to save brochure coupon.');
+    } finally {
+      setBrochureCouponSaving(false);
+    }
+  };
+
   const q = query.trim().toLocaleLowerCase();
   const filteredListings = useMemo(() => listings.filter((item) =>
-    !q || [item.product.name, item.product.brand, item.product.category, item.store.name, item.locality.name].some((value) => value.toLocaleLowerCase().includes(q))), [listings, q]);
+    !q || [item.product.name, item.product.brand, item.product.category, item.store.name, item.locality.name, item.couponCode || ''].some((value) => value.toLocaleLowerCase().includes(q))), [listings, q]);
   const filteredRequests = useMemo(() => requests.filter((item) =>
     !q || [item.itemName, item.brand || '', item.category, item.locality, item.pinCode].some((value) => value.toLocaleLowerCase().includes(q))), [requests, q]);
   const productCount = new Set(listings.map((item) => item.product.id)).size;
+  const listingsWithCouponCount = listings.filter((item) => Boolean(item.couponCode)).length;
+  const listingsWithoutCouponCount = listings.length - listingsWithCouponCount;
+  const couponViewListings = useMemo(() => {
+    return filteredListings.filter((item) => {
+      if (couponFilter === 'with_coupon') return Boolean(item.couponCode);
+      if (couponFilter === 'without_coupon') return !item.couponCode;
+      return true;
+    });
+  }, [filteredListings, couponFilter]);
   const categoryCounts = listings.reduce<Record<string, number>>((acc, item) => {
     acc[item.product.category] = (acc[item.product.category] || 0) + 1;
     return acc;
@@ -299,15 +401,45 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
 
         {section === 'dashboard' && <>
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><div className="flex gap-3"><AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><p><strong>LuLu demo workspace.</strong> Listings, claims, and brochure visits are scoped to this store. Customer requests include all Kochi localities because they are not assigned to a specific store; each request shows its selected location. Brochure candidates stay private until approved.</p></div></div>
-          <section aria-label="Catalog summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <section aria-label="Catalog summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-7">
             <Metric icon={BookOpen} label="Published offers" value={listings.length} detail="In the shopper catalog" />
+            <Metric icon={Ticket} label="Coupons allotted" value={listingsWithCouponCount} detail="Live coupon deals for shoppers" />
             <Metric icon={Package} label="Products" value={productCount} detail="Distinct catalog products" />
             <Metric icon={Store} label="Store" value={store.name.replace(' Hypermarket', '')} detail={`${locality} · ${pinCode}`} />
             <Metric icon={MessageSquare} label="Customer requests" value={requests.length} detail="Across Kochi localities" />
             <Metric icon={Ticket} label="Offers claimed" value={offerClaims} detail="LuLu demo claims · all browsers" />
             <Metric icon={BookOpen} label="Brochure visitors" value={uniqueBrochureVisitors} detail="Unique browsers · demo count" />
           </section>
-          <section className="grid gap-6 xl:grid-cols-2">
+          <section className="grid gap-6 xl:grid-cols-3">
+            <Panel title="Active coupon deals" subtitle={`${listingsWithCouponCount} of ${listings.length} items have coupons allotted`} action="Manage coupons" onAction={() => setSection('coupons')}>
+              {listingsWithCouponCount ? (
+                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                  {listings.filter((item) => Boolean(item.couponCode)).slice(0, 6).map((item) => (
+                    <div key={item.id} className="flex items-center justify-between py-2 first:pt-0 last:pb-0">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">{item.product.name}</p>
+                        <p className="text-xs text-slate-500">{item.product.packSize} · {formatINR(item.offerPriceMinor || item.listedPriceMinor)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-bold text-xs text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                          🎟️ {item.couponCode}
+                        </span>
+                        <button type="button" onClick={() => handleOpenListingCoupon(item)} className="text-xs font-semibold text-teal-800 hover:underline">
+                          Edit
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-xs text-slate-500">
+                  <p className="mb-2">No coupons allotted yet.</p>
+                  <button type="button" onClick={() => setSection('coupons')} className="rounded-lg bg-teal-700 px-3 py-1.5 font-bold text-white hover:bg-teal-800">
+                    Allot coupons
+                  </button>
+                </div>
+              )}
+            </Panel>
             <Panel title="Catalog overview" subtitle="Current listings grouped by category" action="View brochures" onAction={() => setSection('brochures')}>
               {categoriesByCount.length ? <div className="space-y-5">{categoriesByCount.map(([category, count]) => <div key={category}><div className="mb-2 flex justify-between text-sm"><span className="font-medium">{category}</span><strong className="text-teal-800">{count}</strong></div><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-700" style={{ width: `${Math.max(5, count / maxCount * 100)}%` }} /></div></div>)}</div> : <EmptyState>Catalog data will appear here when available.</EmptyState>}
             </Panel>
@@ -319,6 +451,141 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
             <div className="flex items-center justify-between gap-4"><a href={`/brochure/${encodeURIComponent(store.id)}`} className="font-medium text-teal-800 hover:underline">Open public brochure</a><span className="rounded-full bg-teal-50 px-4 py-2 text-lg font-bold text-teal-800">{uniqueBrochureVisitors}</span></div>
           </Panel>
         </>}
+
+        {section === 'coupons' && <section className="space-y-5">
+          <Panel title="Allot & Manage Coupon Codes" subtitle="Promo codes assigned to your store products and brochures. Only products with allotted coupon codes allow shoppers to claim in-store deals.">
+            {/* Filter & Summary Bar */}
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCouponFilter('all')}
+                  className={`min-h-9 rounded-lg px-3.5 text-xs font-bold transition-colors cursor-pointer ${
+                    couponFilter === 'all'
+                      ? 'bg-teal-800 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  All Products ({listings.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCouponFilter('with_coupon')}
+                  className={`min-h-9 rounded-lg px-3.5 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    couponFilter === 'with_coupon'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  <Ticket className="h-3.5 w-3.5" />
+                  <span>With Coupon ({listingsWithCouponCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCouponFilter('without_coupon')}
+                  className={`min-h-9 rounded-lg px-3.5 text-xs font-bold transition-colors cursor-pointer ${
+                    couponFilter === 'without_coupon'
+                      ? 'bg-slate-800 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Without Coupon ({listingsWithoutCouponCount})
+                </button>
+              </div>
+
+              <span className="text-xs font-medium text-slate-500">
+                Showing {couponViewListings.length} of {listings.length} catalog items
+              </span>
+            </div>
+
+            {/* Listings with coupon allotment controls */}
+            {couponViewListings.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-slate-200 bg-slate-50 font-semibold uppercase tracking-wider text-slate-600">
+                    <tr>
+                      <th className="px-3 py-3">Product Name & Category</th>
+                      <th className="px-3 py-3">Pack Size</th>
+                      <th className="px-3 py-3">Price & Savings</th>
+                      <th className="px-3 py-3">Allotted Coupon Code</th>
+                      <th className="px-3 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {couponViewListings.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="min-w-[220px] px-3 py-3.5">
+                          <p className="font-bold text-slate-900 text-sm leading-snug">{item.product.name}</p>
+                          <p className="text-xs text-slate-500">{[item.product.brand, item.product.category].filter(Boolean).join(' · ')}</p>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3.5">
+                          <span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                            {item.product.packSize || '1 unit'}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3.5">
+                          <span className="font-bold text-teal-800 text-sm">
+                            {formatINR(item.offerPriceMinor || item.listedPriceMinor)}
+                          </span>
+                          {item.savingsMinor > 0 && (
+                            <span className="ml-1.5 text-[11px] font-semibold text-emerald-600">
+                              Save {formatINR(item.savingsMinor)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3.5">
+                          {item.couponCode ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 font-mono font-black text-amber-950 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-md text-xs shadow-2xs">
+                                <Ticket className="h-3.5 w-3.5 text-amber-600" />
+                                {item.couponCode}
+                              </span>
+                              <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">
+                                Shoppers can claim
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs italic text-slate-400">
+                              No coupon allotted (Shoppers cannot claim)
+                            </span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenListingCoupon(item)}
+                              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors cursor-pointer ${
+                                item.couponCode
+                                  ? 'border border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100'
+                                  : 'bg-teal-700 text-white hover:bg-teal-800 shadow-xs'
+                              }`}
+                            >
+                              {item.couponCode ? 'Edit Code' : '+ Allot Coupon'}
+                            </button>
+                            {item.couponCode && (
+                              <button
+                                type="button"
+                                onClick={() => void handleRemoveListingCoupon(item.id)}
+                                disabled={couponSaving}
+                                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                title="Remove coupon code from this product"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState>No products found matching the selected filter or search.</EmptyState>
+            )}
+          </Panel>
+        </section>}
 
         {section === 'brochures' && <section className="space-y-5">
           <Panel title={`${store.name} brochures`} subtitle="Browse uploaded brochures and the live digital brochure for this store.">
@@ -334,18 +601,28 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
                 <div className="h-56 bg-slate-100 sm:h-full sm:min-h-64">{item.mimeType === 'application/pdf' ? <iframe title={`Preview of ${item.fileName}`} src={item.previewUrl} className="h-full min-h-56 w-full border-0" /> : <img src={item.previewUrl} alt={`Brochure ${item.fileName}`} className="h-full min-h-56 w-full object-contain" />}</div>
                 <div className="p-5"><div className="flex items-start justify-between gap-3"><h3 className="break-words font-semibold text-slate-900">{item.fileName}</h3><span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold capitalize text-slate-700">{item.status.replace(/_/g, ' ')}</span></div>
                   <p className="mt-1 text-sm text-slate-500">{item.itemCount} extracted {item.itemCount === 1 ? 'product' : 'products'} · Uploaded {new Date(item.uploadedAt).toLocaleDateString()}</p>
+                  {item.couponCode && (
+                    <p className="mt-2 text-xs font-mono font-bold text-amber-900 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded inline-flex items-center gap-1.5 shadow-2xs">
+                      <Ticket className="h-3.5 w-3.5 text-amber-700" />
+                      Brochure Coupon: {item.couponCode}
+                    </p>
+                  )}
                   <div className="mt-4 flex flex-wrap items-end gap-2">
+                    <button type="button" onClick={() => handleOpenBrochureCoupon(item)} className="min-h-10 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-900 hover:bg-amber-100 flex items-center gap-1.5 cursor-pointer">
+                      <Ticket className="h-4 w-4 text-amber-700" />
+                      {item.couponCode ? 'Edit Brochure Coupon' : 'Allot Brochure Coupon'}
+                    </button>
                     {editingExpiryId === item.id ? <><label className="text-xs font-semibold text-slate-600">Brochure expiry date<input type="date" value={brochureExpiryDrafts[item.id] ?? item.expiresAt} onChange={(event) => setBrochureExpiryDrafts((current) => ({ ...current, [item.id]: event.target.value }))} className="mt-1 block min-h-10 rounded-lg border border-slate-300 px-3 text-sm font-normal" /></label><button type="button" onClick={() => void saveBrochureExpiry(item)} disabled={expirySavingId === item.id} className="min-h-10 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{expirySavingId === item.id ? 'Saving…' : 'Save'}</button><button type="button" onClick={() => { setBrochureExpiryDrafts((current) => { const next = { ...current }; delete next[item.id]; return next; }); setEditingExpiryId(null); }} className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700">Cancel</button></> : <><p className="mr-1 text-xs text-slate-600">Expires: <strong>{item.expiresAt ? new Date(`${item.expiresAt}T00:00:00`).toLocaleDateString() : 'Not set'}</strong></p><button type="button" onClick={() => { setBrochureExpiryDrafts((current) => ({ ...current, [item.id]: item.expiresAt })); setEditingExpiryId(item.id); }} className="min-h-10 rounded-lg border border-teal-700 px-4 text-sm font-semibold text-teal-800 hover:bg-teal-50">Edit</button></>}
                     <button type="button" onClick={() => void deleteBrochure(item)} disabled={deletingBrochureId === item.id} className="min-h-10 rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">{deletingBrochureId === item.id ? 'Deleting…' : 'Delete'}</button>
                     <a href={item.fileUrl} className="min-h-10 inline-flex items-center px-2 text-sm font-semibold text-teal-800 hover:underline">Download flyer</a>
                   </div>
                 </div>
               </div>
-              <div className="border-t border-slate-100 p-4"><h4 className="mb-3 text-sm font-bold text-slate-800">Products in this brochure</h4>{item.items.length ? <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">{item.items.map((product) => <div key={product.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"><div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">{product.cropUrl ? <img src={product.cropUrl} alt={product.productName} className="h-full w-full object-contain" /> : <Package className="h-5 w-5 text-slate-400" />}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-900">{product.productName}</p><p className="truncate text-xs text-slate-500">{[product.brand, product.category, product.packSize].filter(Boolean).join(' · ') || 'Category not set'} · <span className="capitalize">{product.status.replace(/_/g, ' ')}</span></p></div><div className="shrink-0 text-right">{product.offerPriceMinor !== null && <p className="text-sm font-bold text-teal-800">{formatINR(product.offerPriceMinor)}</p>}{product.regularPriceMinor !== null && <p className="text-xs text-slate-500 line-through">{formatINR(product.regularPriceMinor)}</p>}</div></div>)}</div> : <p className="text-sm text-slate-500">No product details saved for this brochure.</p>}</div>
+              <div className="border-t border-slate-100 p-4"><h4 className="mb-3 text-sm font-bold text-slate-800">Products in this brochure</h4>{item.items.length ? <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">{item.items.map((product) => <div key={product.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"><div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">{product.cropUrl ? <img src={product.cropUrl} alt={product.productName} className="h-full w-full object-contain" /> : <Package className="h-5 w-5 text-slate-400" />}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-900">{product.productName}</p><p className="truncate text-xs text-slate-500">{[product.brand, product.category, product.packSize].filter(Boolean).join(' · ') || 'Category not set'} · <span className="capitalize">{product.status.replace(/_/g, ' ')}</span></p>{product.couponCode && <p className="mt-0.5 text-[11px] font-mono font-bold text-amber-900">🎟️ {product.couponCode}</p>}</div><div className="shrink-0 text-right">{product.offerPriceMinor !== null && <p className="text-sm font-bold text-teal-800">{formatINR(product.offerPriceMinor)}</p>}{product.regularPriceMinor !== null && <p className="text-xs text-slate-500 line-through">{formatINR(product.regularPriceMinor)}</p>}</div></div>)}</div> : <p className="text-sm text-slate-500">No product details saved for this brochure.</p>}</div>
             </article>)}</div> : <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center"><BookOpen className="mx-auto h-8 w-8 text-teal-700" /><p className="mt-3 font-semibold">No uploaded brochures yet</p><p className="mt-1 text-sm text-slate-500">Uploaded source files and extracted product data will be saved here after extraction.</p><button type="button" onClick={() => setSection('brochure')} className="mt-4 min-h-11 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800">Upload a brochure</button></div>}
           </Panel>
           {filteredListings.length > 0 && <Panel title="Offers in the current brochure" subtitle="Published offers included in the digital brochure.">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{filteredListings.map((item) => <article key={item.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">{item.product.name}</h3><p className="mt-1 text-sm text-slate-500">{[item.product.brand, item.product.category, item.product.packSize].filter(Boolean).join(' · ')}</p></div><span className="shrink-0 font-bold text-teal-800">{formatINR(item.offerPriceMinor || item.listedPriceMinor)}</span></div><p className="mt-3 text-xs text-slate-500">Valid until {formatDate(item.validUntil)}</p></article>)}</div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{filteredListings.map((item) => <article key={item.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">{item.product.name}</h3><p className="mt-1 text-sm text-slate-500">{[item.product.brand, item.product.category, item.product.packSize].filter(Boolean).join(' · ')}</p></div><span className="shrink-0 font-bold text-teal-800">{formatINR(item.offerPriceMinor || item.listedPriceMinor)}</span></div><div className="mt-3 flex items-center justify-between"><p className="text-xs text-slate-500">Valid until {formatDate(item.validUntil)}</p>{item.couponCode ? <button type="button" onClick={() => handleOpenListingCoupon(item)} className="font-mono text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded hover:bg-amber-100 cursor-pointer">🎟️ {item.couponCode}</button> : <button type="button" onClick={() => handleOpenListingCoupon(item)} className="text-xs font-semibold text-teal-700 hover:underline cursor-pointer">+ Allot coupon</button>}</div></article>)}</div>
           </Panel>}
         </section>}
 
@@ -492,6 +769,237 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
                   <span>Send SMS</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Coupon Allotment Modal */}
+      {couponModalListing && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in"
+        >
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                  <Ticket className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">
+                    {couponModalListing.couponCode ? 'Edit Coupon Code' : 'Allot Product Coupon'}
+                  </h3>
+                  <p className="text-xs text-slate-500">Only products with coupons can be claimed by shoppers</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCouponModalListing(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Product Info */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <p className="font-bold text-slate-900 text-sm">{couponModalListing.product.name}</p>
+                <p className="text-xs text-slate-500">
+                  {[couponModalListing.product.brand, couponModalListing.product.category, couponModalListing.product.packSize].filter(Boolean).join(' · ')}
+                </p>
+                <div className="pt-1 flex items-baseline gap-2">
+                  <span className="font-bold text-teal-800 text-sm">
+                    {formatINR(couponModalListing.offerPriceMinor || couponModalListing.listedPriceMinor)}
+                  </span>
+                  {couponModalListing.savingsMinor > 0 && (
+                    <span className="text-xs font-semibold text-emerald-600">
+                      Save {formatINR(couponModalListing.savingsMinor)}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Coupon Code Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Coupon Code
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. LULU50, FRESHDEAL"
+                    maxLength={30}
+                    className="w-full px-3 py-2 text-sm font-mono uppercase tracking-wider font-bold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCouponInput(`LMD-LULU-${Math.floor(100 + Math.random() * 900)}`)}
+                    className="px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    Auto-Generate
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Shoppers will see and copy this exact code to redeem at checkout.
+                </p>
+              </div>
+
+              {/* Quick suggestion tags */}
+              <div>
+                <span className="text-[11px] font-semibold text-slate-600 block mb-1.5">Quick Presets:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {['LULU10', 'LULU20', 'FRESHDEAL', 'WEEKEND50'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCouponInput(preset)}
+                      className="px-2 py-1 text-xs font-mono font-semibold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-md transition-colors cursor-pointer"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {couponMessage && (
+                <div className="p-3 rounded-lg bg-red-50 text-red-800 text-xs flex items-center gap-1.5 border border-red-200">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{couponMessage}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+              {couponModalListing.couponCode ? (
+                <button
+                  type="button"
+                  onClick={() => void handleRemoveListingCoupon(couponModalListing.id)}
+                  disabled={couponSaving}
+                  className="px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  Remove Coupon
+                </button>
+              ) : <span />}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCouponModalListing(null)}
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveListingCoupon()}
+                  disabled={couponSaving || !couponInput.trim()}
+                  className="px-4 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {couponSaving ? 'Saving…' : 'Save Coupon'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Brochure Coupon Allotment Modal */}
+      {brochureCouponModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in"
+        >
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                  <Ticket className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Allot Brochure Coupon</h3>
+                  <p className="text-xs text-slate-500">{brochureCouponModal.fileName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBrochureCouponModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Brochure Coupon Code
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={brochureCouponInput}
+                    onChange={(e) => setBrochureCouponInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. LULUFLYER, WEEKEND25"
+                    maxLength={30}
+                    className="w-full px-3 py-2 text-sm font-mono uppercase tracking-wider font-bold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setBrochureCouponInput(`LMD-FLYER-${Math.floor(100 + Math.random() * 900)}`)}
+                    className="px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    Auto-Generate
+                  </button>
+                </div>
+              </div>
+
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={brochureCouponApplyAll}
+                  onChange={(e) => setBrochureCouponApplyAll(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded text-teal-700 focus:ring-teal-500"
+                />
+                <span>
+                  <strong>Apply to all products in this brochure</strong>
+                  <span className="block text-slate-600 mt-0.5">
+                    Automatically assigns this coupon code to all {brochureCouponModal.itemCount} extracted products so shoppers can claim deals on any item from this brochure.
+                  </span>
+                </span>
+              </label>
+
+              {brochureCouponMessage && (
+                <div className="p-3 rounded-lg bg-red-50 text-red-800 text-xs flex items-center gap-1.5 border border-red-200">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{brochureCouponMessage}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBrochureCouponModal(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveBrochureCoupon()}
+                disabled={brochureCouponSaving || !brochureCouponInput.trim()}
+                className="px-4 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {brochureCouponSaving ? 'Saving…' : 'Save Brochure Coupon'}
+              </button>
             </div>
           </div>
         </div>

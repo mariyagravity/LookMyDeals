@@ -11,6 +11,7 @@ const migrations = [
   '004_listing_claim_events.sql',
   '005_brochure_crops.sql',
   '006_brochure_expiry.sql',
+  '007_listing_coupon_codes.sql',
 ];
 
 async function migrate() {

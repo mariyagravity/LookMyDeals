@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, MapPin } from 'lucide-react';
+import { ArrowLeft, BookOpen, MapPin, Ticket } from 'lucide-react';
 import { EnrichedListing, Store } from '../types';
 import { readApiJson } from '../lib/api';
 import { formatDate, formatINR } from '../lib/format';
 import { getOrCreateVisitorId } from '../lib/visitorId';
+import { ClaimModal } from '../components/ClaimModal';
 
 interface CatalogResponse {
   listings: EnrichedListing[];
@@ -19,6 +20,7 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
   const [listings, setListings] = useState<EnrichedListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [claimingListing, setClaimingListing] = useState<EnrichedListing | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,10 +94,45 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
             <h3 className="mt-1 text-lg font-bold">{listing.product.name}</h3>
             <p className="mt-1 text-sm text-slate-500">{listing.product.packSize}</p>
             <div className="mt-4 flex items-baseline gap-2"><strong className="text-xl text-teal-800">{formatINR(listing.offerPriceMinor || listing.listedPriceMinor)}</strong>{listing.offerPriceMinor && listing.offerPriceMinor < listing.listedPriceMinor ? <span className="text-sm text-slate-400 line-through">{formatINR(listing.listedPriceMinor)}</span> : null}</div>
+            {listing.couponCode && (
+              <div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-950">
+                <span className="flex items-center gap-1 font-bold">
+                  <Ticket className="h-3.5 w-3.5 text-amber-700 shrink-0" />
+                  <span>Coupon:</span>
+                </span>
+                <span className="font-mono font-black text-amber-900 bg-white px-2 py-0.5 rounded border border-amber-200 shadow-2xs">
+                  {listing.couponCode}
+                </span>
+              </div>
+            )}
             {listing.validUntil && <p className="mt-2 text-xs text-slate-500">Valid until {formatDate(listing.validUntil)}</p>}
+            {listing.couponCode && (
+              <button
+                type="button"
+                onClick={() => setClaimingListing(listing)}
+                className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg bg-teal-700 py-2 text-xs font-bold text-white hover:bg-teal-800 transition-colors shadow-sm"
+              >
+                <Ticket className="h-3.5 w-3.5" />
+                <span>Claim Coupon</span>
+              </button>
+            )}
           </article>)}</div>
         </section>) : <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">There are no published offers for this store yet.</div>}
       </>}
     </main>
+
+    {claimingListing && (
+      <ClaimModal
+        listing={claimingListing}
+        onClose={() => setClaimingListing(null)}
+        onClaimSuccess={(claim) => {
+          void fetch('/api/claims', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ claimId: claim.id, listingId: claim.listingId }),
+          }).catch(() => undefined);
+        }}
+      />
+    )}
   </div>;
 };

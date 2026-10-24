@@ -106,6 +106,18 @@ export const DealCard: React.FC<DealCardProps> = ({
           ) : null}
         </div>
 
+        {listing.couponCode && (
+          <div className="mt-2.5 flex items-center justify-between bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg text-amber-950 text-xs">
+            <span className="flex items-center gap-1.5 font-bold">
+              <Ticket className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span>Coupon Code:</span>
+            </span>
+            <span className="font-mono font-black tracking-wider bg-white px-2 py-0.5 rounded border border-amber-200 text-amber-900 text-xs shadow-2xs">
+              {listing.couponCode}
+            </span>
+          </div>
+        )}
+
         {listing.validUntil && (
           <div className="mt-2 text-[11px] text-ink-muted flex items-center gap-1">
             <Calendar className="w-3 h-3 text-slate-400" />
@@ -115,11 +127,13 @@ export const DealCard: React.FC<DealCardProps> = ({
       </div>
 
       {/* Bottom Actions: Reminder Cart & Claim Promo Code */}
-      <div className="p-3 pt-1 grid grid-cols-2 gap-2">
+      <div className={`p-3 pt-1 ${listing.couponCode ? 'grid grid-cols-2 gap-2' : 'flex'}`}>
         <button
           type="button"
           onClick={() => onAddToCart(listing)}
           className={`touch-target px-3 py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
+            listing.couponCode ? 'w-full' : 'w-full'
+          } ${
             isInCart
               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
               : 'bg-slate-100 text-slate-800 hover:bg-slate-200 border border-slate-200'
@@ -139,15 +153,17 @@ export const DealCard: React.FC<DealCardProps> = ({
           )}
         </button>
 
-        <button
-          type="button"
-          onClick={() => onClaimOffer(listing)}
-          className="touch-target px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-strong transition-colors flex items-center justify-center gap-1.5 shadow-sm"
-          aria-label="Claim Demo Offer"
-        >
-          <Ticket className="w-4 h-4" />
-          <span>Claim Deal</span>
-        </button>
+        {listing.couponCode && (
+          <button
+            type="button"
+            onClick={() => onClaimOffer(listing)}
+            className="touch-target px-3 py-2 text-xs font-bold rounded-lg bg-teal-700 text-white hover:bg-teal-800 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+            aria-label={`Claim coupon ${listing.couponCode}`}
+          >
+            <Ticket className="w-4 h-4" />
+            <span>Claim Coupon</span>
+          </button>
+        )}
       </div>
     </div>
   );

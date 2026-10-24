@@ -37,7 +37,7 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
 
     const now = new Date();
     const expiry = new Date();
-    expiry.setDate(now.getDate() + 7); // 7 day validity
+    const claimCode = listing.couponCode ? listing.couponCode.trim().toUpperCase() : generateClaimCode();
 
     const newClaim: OfferClaim = {
       id: crypto.randomUUID(),
@@ -45,7 +45,8 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
       productName: listing.product.name,
       storeName: listing.store.name,
       localityName: listing.locality.name,
-      claimCode: generateClaimCode(),
+      claimCode,
+      couponCode: listing.couponCode || undefined,
       discountMinor,
       finalPriceMinor,
       claimedAt: now.toISOString(),
@@ -96,13 +97,27 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
             <div className="flex items-center gap-2 text-primary-strong mb-2">
               <Ticket className="w-6 h-6" />
               <h2 id="claim-modal-title" className="text-xl font-bold text-ink">
-                Claim In-Store Deal
+                {listing.couponCode ? 'Claim Store Coupon' : 'Claim In-Store Deal'}
               </h2>
             </div>
 
             <p className="text-xs text-ink-muted mb-4">
-              Preview a generated demo code. It is not redeemable at checkout.
+              {listing.couponCode
+                ? `Redeem this store coupon code at ${listing.store.name} checkout.`
+                : 'Preview a generated demo code. It is not redeemable at checkout.'}
             </p>
+
+            {listing.couponCode && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center justify-between text-xs">
+                <span className="font-semibold text-amber-900 flex items-center gap-1.5">
+                  <Ticket className="w-4 h-4 text-amber-700" />
+                  Store Allotted Coupon:
+                </span>
+                <span className="font-mono font-black text-sm text-amber-950 bg-white px-2.5 py-1 rounded-lg border border-amber-300 shadow-2xs">
+                  {listing.couponCode}
+                </span>
+              </div>
+            )}
 
             {/* Deal Snapshot Box */}
             <div className="bg-surface p-3.5 rounded-xl border border-surface-border mb-4">
@@ -203,18 +218,18 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
             </div>
 
             <h2 className="text-xl font-bold text-ink mb-1">
-              Demo Code Claimed!
+              {listing.couponCode ? 'Store Coupon Claimed!' : 'Demo Code Claimed!'}
             </h2>
             <p className="text-xs text-ink-muted mb-4">
-              Show this code to the cashier at{' '}
+              Show this coupon code to the cashier at{' '}
               <span className="font-semibold text-ink">{listing.store.name}</span>, {listing.locality.name}.
             </p>
 
             {/* Generated Code Display Box */}
-            <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 mb-4 flex items-center justify-between">
+            <div className="p-4 bg-teal-50/60 rounded-xl border border-teal-200 mb-4 flex items-center justify-between">
               <div className="text-left">
-                <span className="text-[10px] uppercase font-bold text-primary-strong tracking-widest block">
-                  Demo Voucher Code
+                <span className="text-[10px] uppercase font-bold text-teal-800 tracking-widest block">
+                  {listing.couponCode ? 'Store Allotted Coupon Code' : 'Demo Voucher Code'}
                 </span>
                 <span className="text-2xl font-black tracking-wider text-ink font-mono">
                   {generatedClaim.claimCode}

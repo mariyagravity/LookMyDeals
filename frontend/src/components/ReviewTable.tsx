@@ -182,6 +182,7 @@ export const ReviewTable: React.FC<ReviewTableProps> = ({
               <th className="py-3 px-3">Category</th>
               <th className="py-3 px-3">Regular (₹)</th>
               <th className="py-3 px-3">Offer (₹)</th>
+              <th className="py-3 px-3">Coupon Code</th>
               <th className="py-3 px-3">Valid Until</th>
               <th className="py-3 px-3">Confidence</th>
               <th className="py-3 px-3 text-right">Actions</th>
@@ -331,6 +332,37 @@ export const ReviewTable: React.FC<ReviewTableProps> = ({
                           </span>
                         )}
                       </div>
+                    )}
+                  </td>
+
+                  {/* Coupon Code */}
+                  <td className="py-3 px-3 whitespace-nowrap">
+                    {isEditing ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          placeholder="e.g. LULU20"
+                          value={c.couponCode || ''}
+                          onChange={(e) => handleFieldChange(c, 'couponCode', e.target.value.toUpperCase())}
+                          className="w-24 px-2 py-1 border rounded text-xs font-mono uppercase"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleFieldChange(c, 'couponCode', `LMD-${Math.random().toString(36).slice(2, 6).toUpperCase()}`)}
+                          title="Auto-generate coupon code"
+                          className="px-1.5 py-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-semibold cursor-pointer"
+                        >
+                          Gen
+                        </button>
+                      </div>
+                    ) : (
+                      c.couponCode ? (
+                        <span className="inline-flex items-center gap-1 font-mono font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[11px]">
+                          🎟️ {c.couponCode}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[11px] italic">No coupon</span>
+                      )
                     )}
                   </td>
 

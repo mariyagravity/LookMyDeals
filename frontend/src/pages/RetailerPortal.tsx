@@ -133,6 +133,7 @@ export const RetailerPortal: React.FC = () => {
           category: item.category,
           regularPrice: item.regularPrice,
           offerPrice: item.offerPrice,
+          couponCode: item.couponCode || null,
           validFrom: item.validFrom,
           validUntil: item.validUntil,
           notes: item.notes,

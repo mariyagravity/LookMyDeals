@@ -363,12 +363,6 @@ export default function App() {
               <PlusCircle className="w-4 h-4 text-slate-700 shrink-0" />
               <span>Request an Offer</span>
             </button>
-            <a
-              href="#about"
-              className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors inline-block"
-            >
-              About Us
-            </a>
           </nav>
 
           {/* Right Action Buttons & Mobile Menu Toggle */}
@@ -509,13 +503,6 @@ export default function App() {
               >
                 Become a Shop With Us (Retailer)
               </button>
-              <a
-                href="#about"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors"
-              >
-                About Us
-              </a>
             </div>
           </div>
         )}

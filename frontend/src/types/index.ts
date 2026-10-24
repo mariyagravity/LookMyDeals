@@ -101,6 +101,8 @@ export interface OfferRequest {
 
 export interface BrochureProductCandidate {
   id: string;
+  cropBox?: { x: number; y: number; width: number; height: number } | null;
+  cropPreviewUrl?: string;
   productName: string;
   brand: string | null;
   packSize: string | null;

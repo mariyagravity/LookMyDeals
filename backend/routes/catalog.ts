@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { z } from 'zod';
 import { db } from '../db';
@@ -9,6 +11,7 @@ import { getRetailerSession, requireRetailer } from '../middleware/retailerSessi
 const router = Router();
 const brochureVisitLimiter = createRateLimiter(120, 15 * 60 * 1000);
 const BrochureVisitSchema = z.object({ visitorId: z.string().uuid() });
+const uploadRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'uploads');
 
 router.get('/brochure-visits', requireRetailer, async (req: Request, res: Response) => {
   const session = getRetailerSession(req);
@@ -54,7 +57,9 @@ router.post('/stores/:storeId/brochure-visits', brochureVisitLimiter, async (req
 
 const PublishSchema = z.object({
   storeId: z.string().min(1).max(64),
+  brochureId: z.string().uuid(),
   items: z.array(z.object({
+    candidateId: z.string().uuid(),
     productName: z.string().trim().min(1).max(200),
     brand: z.string().max(120).nullable().optional(),
     packSize: z.string().max(80).nullable().optional(),
@@ -64,6 +69,7 @@ const PublishSchema = z.object({
     offerPrice: z.number().positive().nullable(),
     validFrom: z.string().date().nullable().optional(),
     validUntil: z.string().date().nullable().optional(),
+    notes: z.array(z.string().max(200)).max(10),
   }).refine((item) => item.regularPrice !== null || item.offerPrice !== null)
     .refine((item) => item.regularPrice === null || item.offerPrice === null || item.offerPrice <= item.regularPrice)
   ).min(1).max(100),
@@ -85,7 +91,7 @@ router.get('/', async (_req: Request, res: Response) => {
       SELECT
         l.id, l.store_id, l.product_id, l.listed_price_minor, l.offer_price_minor,
         l.currency, l.source_type, l.verification_status, l.valid_from, l.valid_until,
-        l.price_checked_at, s.name AS store_name, s.locality, s.pin_code, s.address,
+        l.price_checked_at, p.image_storage_key, s.name AS store_name, s.locality, s.pin_code, s.address,
         s.verification_status AS store_verification_status,
         p.name AS product_name, p.brand, p.category, p.pack_size, p.unit
       FROM store_listings l
@@ -143,6 +149,7 @@ router.get('/', async (_req: Request, res: Response) => {
           category: String(row.category),
           packSize: String(row.pack_size || ''),
           unit: String(row.unit || ''),
+          image: row.image_storage_key ? `/api/catalog/products/${encodeURIComponent(String(row.product_id))}/image` : undefined,
         },
         store: {
           id: String(row.store_id),
@@ -171,13 +178,32 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
+router.get('/products/:productId/image', async (req: Request, res: Response) => {
+  try {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT image_storage_key FROM products WHERE id = ?',
+      [req.params.productId]
+    );
+    const storageKey = String(rows[0]?.image_storage_key || '');
+    if (!storageKey.startsWith('brochure-crops/')) return res.status(404).end();
+    const imagePath = path.resolve(uploadRoot, storageKey);
+    const relativePath = path.relative(uploadRoot, imagePath);
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) return res.status(404).end();
+    return res.sendFile(imagePath, { dotfiles: 'deny' }, (error) => {
+      if (error && !res.headersSent) res.status(404).end();
+    });
+  } catch {
+    return res.status(404).end();
+  }
+});
+
 router.post('/brochure/publish', requireRetailer, async (req: Request, res: Response) => {
   const parsed = PublishSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: { code: 'INVALID_PUBLISH_DATA', message: 'Check the approved product details and prices.' } });
   }
 
-  const { storeId, items } = parsed.data;
+  const { storeId, brochureId, items } = parsed.data;
   const session = getRetailerSession(req);
   if (!session || session.storeId !== storeId) {
     return res.status(403).json({ error: { code: 'STORE_ACCESS_DENIED', message: 'You can only publish listings for your own store.' } });
@@ -188,15 +214,27 @@ router.post('/brochure/publish', requireRetailer, async (req: Request, res: Resp
     if (!stores.length) return res.status(404).json({ error: { code: 'STORE_NOT_FOUND', message: 'Choose a store from the catalog.' } });
 
     await connection.beginTransaction();
+    const [brochureRows] = await connection.execute<RowDataPacket[]>(
+      'SELECT id FROM brochures WHERE id = ? AND store_id = ? FOR UPDATE',
+      [brochureId, storeId]
+    );
+    if (!brochureRows.length) throw new Error('BROCHURE_NOT_FOUND');
+
     for (const item of items) {
+      const [candidateRows] = await connection.execute<RowDataPacket[]>(
+        `SELECT crop_storage_key FROM brochure_items
+         WHERE id = ? AND brochure_id = ? AND review_status = 'needs_review' FOR UPDATE`,
+        [item.candidateId, brochureId]
+      );
+      if (!candidateRows.length) throw new Error('BROCHURE_ITEM_NOT_REVIEWABLE');
       const productId = randomUUID();
       const listingId = randomUUID();
       const listedPriceMinor = Math.round((item.regularPrice ?? item.offerPrice!) * 100);
       const offerPriceMinor = item.offerPrice === null ? null : Math.round(item.offerPrice * 100);
       await connection.execute(
-        `INSERT INTO products (id, name, brand, category, pack_size, unit)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [productId, item.productName, item.brand || null, item.category, item.packSize || null, item.unit || null]
+        `INSERT INTO products (id, name, brand, category, pack_size, unit, image_storage_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [productId, item.productName, item.brand || null, item.category, item.packSize || null, item.unit || null, candidateRows[0].crop_storage_key || null]
       );
       await connection.execute(
         `INSERT INTO store_listings
@@ -205,11 +243,38 @@ router.post('/brochure/publish', requireRetailer, async (req: Request, res: Resp
          VALUES (?, ?, ?, ?, ?, 'INR', 'brochure', 'demo', ?, ?, CURRENT_DATE)`,
         [listingId, storeId, productId, listedPriceMinor, offerPriceMinor, item.validFrom || null, item.validUntil || null]
       );
+      await connection.execute(
+        `UPDATE brochure_items
+         SET product_name = ?, brand = ?, pack_size = ?, category = ?,
+             listed_price_minor = ?, offer_price_minor = ?, valid_from = ?, valid_until = ?,
+             review_status = 'approved', review_notes = ?, published_listing_id = ?
+         WHERE id = ? AND brochure_id = ?`,
+        [
+          item.productName, item.brand || null, item.packSize || null, item.category,
+          item.regularPrice === null ? null : Math.round(item.regularPrice * 100),
+          offerPriceMinor, item.validFrom || null, item.validUntil || null,
+          JSON.stringify(item.notes), listingId, item.candidateId, brochureId,
+        ]
+      );
     }
+    const [pendingRows] = await connection.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) AS pending_count FROM brochure_items WHERE brochure_id = ? AND review_status = 'needs_review'`,
+      [brochureId]
+    );
+    await connection.execute(
+      `UPDATE brochures SET processing_status = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?`,
+      [Number(pendingRows[0]?.pending_count || 0) === 0 ? 'approved' : 'needs_review', brochureId, storeId]
+    );
     await connection.commit();
     return res.status(201).json({ published: items.length });
-  } catch {
+  } catch (error) {
     await connection.rollback();
+    if (error instanceof Error && error.message === 'BROCHURE_NOT_FOUND') {
+      return res.status(404).json({ error: { code: 'BROCHURE_NOT_FOUND', message: 'This brochure does not belong to the signed-in retailer.' } });
+    }
+    if (error instanceof Error && error.message === 'BROCHURE_ITEM_NOT_REVIEWABLE') {
+      return res.status(409).json({ error: { code: 'BROCHURE_ITEM_NOT_REVIEWABLE', message: 'One or more items were already reviewed or do not belong to this brochure.' } });
+    }
     return res.status(500).json({ error: { code: 'PUBLISH_FAILED', message: 'Could not publish the approved listings.' } });
   } finally {
     connection.release();

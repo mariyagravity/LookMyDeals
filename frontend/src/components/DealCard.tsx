@@ -33,6 +33,7 @@ export const DealCard: React.FC<DealCardProps> = ({
     <div className="bg-white rounded-xl border border-surface-border shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden flex flex-col justify-between">
       {/* Top Header: Brand, Pack size & Badges */}
       <div className="p-4 pb-2">
+        {product.image && <img src={product.image} alt={`${product.name} product`} loading="lazy" className="mb-3 h-32 w-full rounded-lg bg-slate-50 object-contain" />}
         <div className="flex items-start justify-between gap-2 mb-1.5">
           <span className="text-xs font-semibold tracking-wider uppercase text-primary-strong">
             {product.brand}

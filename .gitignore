@@ -4,6 +4,7 @@ lookmydeals_skills/
 node_modules/
 dist/
 frontend/dist/
+backend/uploads/
 dist-ssr/
 *.local
 .env

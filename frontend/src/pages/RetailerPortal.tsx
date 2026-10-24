@@ -10,9 +10,25 @@ interface RetailerBrochure {
   fileName: string;
   mimeType: string;
   fileSizeBytes: number;
+  fileUrl: string;
+  previewUrl: string;
   status: string;
   uploadedAt: string;
+  expiresAt: string;
   itemCount: number;
+  items: {
+    id: string;
+    productName: string;
+    brand: string;
+    packSize: string;
+    category: string;
+    regularPriceMinor: number | null;
+    offerPriceMinor: number | null;
+    validFrom: string;
+    validUntil: string;
+    status: string;
+    cropUrl: string;
+  }[];
 }
 interface RetailerDashboardData {
   retailer: { username: string; storeId: string };
@@ -101,11 +117,27 @@ export const RetailerPortal: React.FC = () => {
     }
   };
 
-  const publishApprovedItems = async (items: BrochureProductCandidate[], storeId: string) => {
+  const publishApprovedItems = async (items: BrochureProductCandidate[], storeId: string, brochureId: string) => {
     const response = await fetch('/api/catalog/brochure/publish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storeId, items }),
+      body: JSON.stringify({
+        storeId,
+        brochureId,
+        items: items.map((item) => ({
+          candidateId: item.id,
+          productName: item.productName,
+          brand: item.brand,
+          packSize: item.packSize,
+          unit: item.unit,
+          category: item.category,
+          regularPrice: item.regularPrice,
+          offerPrice: item.offerPrice,
+          validFrom: item.validFrom,
+          validUntil: item.validUntil,
+          notes: item.notes,
+        })),
+      }),
     });
     const result = await readApiJson(response);
     if (!response.ok) throw new Error(result.error?.message || 'Could not publish these listings.');
@@ -128,6 +160,8 @@ export const RetailerPortal: React.FC = () => {
       uniqueBrochureVisitors={dashboard.uniqueBrochureVisitors}
       offerClaims={dashboard.offerClaims}
       onLogout={handleLogout}
+      onBrochureUploaded={loadDashboard}
+      onRefreshRequests={loadDashboard}
       onBrochureItemsPublished={publishApprovedItems}
     />;
   }

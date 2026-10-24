@@ -9,6 +9,8 @@ const migrations = [
   '002_catalog_dates_and_requests.sql',
   '003_brochure_visitors.sql',
   '004_listing_claim_events.sql',
+  '005_brochure_crops.sql',
+  '006_brochure_expiry.sql',
 ];
 
 async function migrate() {

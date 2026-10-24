@@ -87,9 +87,8 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
       SELECT id, item_name, brand, category, locality, pin_code, target_price_minor,
              contact_reference, status, created_at
       FROM offer_requests
-      WHERE pin_code = ? OR LOWER(locality) = LOWER(?)
       ORDER BY created_at DESC
-    `, [String(storeRow.pin_code), String(storeRow.locality)]);
+    `);
     const [visitorRows] = await db.execute<RowDataPacket[]>(
       'SELECT COUNT(*) AS unique_visitors FROM brochure_visitors WHERE store_id = ?',
       [session.storeId]
@@ -100,14 +99,28 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
     );
     const [brochureRows] = await db.execute<RowDataPacket[]>(`
       SELECT b.id, b.original_file_name, b.mime_type, b.file_size_bytes,
-             b.processing_status, b.uploaded_at, COUNT(bi.id) AS item_count
+             b.processing_status, b.uploaded_at, b.expires_at, COUNT(bi.id) AS item_count
       FROM brochures b
       LEFT JOIN brochure_items bi ON bi.brochure_id = b.id
       WHERE b.store_id = ?
       GROUP BY b.id, b.original_file_name, b.mime_type, b.file_size_bytes,
-               b.processing_status, b.uploaded_at
+               b.processing_status, b.uploaded_at, b.expires_at
       ORDER BY b.uploaded_at DESC
     `, [session.storeId]);
+    const [brochureItemRows] = await db.execute<RowDataPacket[]>(`
+      SELECT bi.id, bi.brochure_id, bi.product_name, bi.brand, bi.pack_size, bi.category,
+             bi.listed_price_minor, bi.offer_price_minor, bi.valid_from, bi.valid_until,
+             bi.review_status, bi.crop_storage_key
+      FROM brochure_items bi
+      JOIN brochures b ON b.id = bi.brochure_id
+      WHERE b.store_id = ?
+      ORDER BY bi.created_at, bi.id
+    `, [session.storeId]);
+    const itemsByBrochure = new Map<string, RowDataPacket[]>();
+    for (const item of brochureItemRows) {
+      const id = String(item.brochure_id);
+      itemsByBrochure.set(id, [...(itemsByBrochure.get(id) || []), item]);
+    }
 
     const storeLocality = String(storeRow.locality);
     const listings = listingRows.map((row) => {
@@ -167,9 +180,25 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
         fileName: String(row.original_file_name),
         mimeType: String(row.mime_type),
         fileSizeBytes: Number(row.file_size_bytes),
+        fileUrl: `/api/brochure/${encodeURIComponent(String(row.id))}/file`,
+        previewUrl: `/api/brochure/${encodeURIComponent(String(row.id))}/preview`,
         status: String(row.processing_status),
         uploadedAt: row.uploaded_at instanceof Date ? row.uploaded_at.toISOString() : String(row.uploaded_at),
+        expiresAt: dateValue(row.expires_at) || '',
         itemCount: Number(row.item_count || 0),
+        items: (itemsByBrochure.get(String(row.id)) || []).map((item) => ({
+          id: String(item.id),
+          productName: String(item.product_name),
+          brand: String(item.brand || ''),
+          packSize: String(item.pack_size || ''),
+          category: String(item.category || ''),
+          regularPriceMinor: item.listed_price_minor === null ? null : Number(item.listed_price_minor),
+          offerPriceMinor: item.offer_price_minor === null ? null : Number(item.offer_price_minor),
+          validFrom: dateValue(item.valid_from) || '',
+          validUntil: dateValue(item.valid_until) || '',
+          status: String(item.review_status),
+          cropUrl: item.crop_storage_key ? `/api/brochure/${encodeURIComponent(String(row.id))}/items/${encodeURIComponent(String(item.id))}/crop` : '',
+        })),
       })),
       categories,
       requests: requestRows.map((row) => ({
@@ -189,6 +218,26 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
     });
   } catch {
     return res.status(500).json({ error: { code: 'RETAILER_DASHBOARD_FAILED', message: 'Could not load the retailer dashboard.' } });
+  }
+});
+
+router.patch('/brochures/:brochureId/expiry', requireRetailer, async (req: Request, res: Response) => {
+  const session = getRetailerSession(req);
+  if (!session) return res.status(401).json({ error: { code: 'RETAILER_LOGIN_REQUIRED', message: 'Sign in to edit brochure details.' } });
+  const parsed = z.object({ expiresAt: z.union([z.string().date(), z.literal('')]) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: { code: 'INVALID_EXPIRY_DATE', message: 'Choose a valid expiry date or clear the field.' } });
+  try {
+    const [result] = await db.execute(
+      'UPDATE brochures SET expires_at = ? WHERE id = ? AND store_id = ?',
+      [parsed.data.expiresAt || null, req.params.brochureId, session.storeId]
+    );
+    if ((result as { affectedRows?: number }).affectedRows === 0) {
+      const [rows] = await db.execute<RowDataPacket[]>('SELECT id FROM brochures WHERE id = ? AND store_id = ?', [req.params.brochureId, session.storeId]);
+      if (!rows.length) return res.status(404).json({ error: { code: 'BROCHURE_NOT_FOUND', message: 'This brochure was not found for your store.' } });
+    }
+    return res.json({ updated: true, expiresAt: parsed.data.expiresAt || null });
+  } catch {
+    return res.status(500).json({ error: { code: 'BROCHURE_EXPIRY_UPDATE_FAILED', message: 'Could not update the brochure expiry date.' } });
   }
 });
 

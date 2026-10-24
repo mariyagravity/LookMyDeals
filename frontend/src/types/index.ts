@@ -95,6 +95,7 @@ export interface OfferRequest {
   pinCode: string;
   targetPriceMinor?: number;
   contactMasked?: string;
+  contactPhone?: string;
   createdAt: string;
   status: 'open' | 'responded' | 'closed';
 }

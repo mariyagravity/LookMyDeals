@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, BookOpen, CheckCircle2, ExternalLink, LayoutDashboard, MessageSquare, Package, Search, Sparkles, Store, Ticket } from 'lucide-react';
+import { AlertCircle, BookOpen, CheckCircle2, ExternalLink, LayoutDashboard, MessageSquare, Package, Search, Sparkles, Store, Ticket, MessageCircle, Phone, Send, X, Check } from 'lucide-react';
 import { BrochureProductCandidate, Category, EnrichedListing, OfferRequest, Store as StoreType } from '../types';
 import { BrochureUpload } from '../components/BrochureUpload';
 import { ReviewTable } from '../components/ReviewTable';
@@ -74,6 +74,66 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
   const [expiryMessage, setExpiryMessage] = useState('');
   const [editingExpiryId, setEditingExpiryId] = useState<string | null>(null);
   const [deletingBrochureId, setDeletingBrochureId] = useState<string | null>(null);
+
+  // Customer Enquiry Reply State (WhatsApp & SMS)
+  const [activeReplyRequest, setActiveReplyRequest] = useState<OfferRequest | null>(null);
+  const [replyPhone, setReplyPhone] = useState('');
+  const [replyMessage, setReplyMessage] = useState('');
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [replySentSuccess, setReplySentSuccess] = useState('');
+
+  useEffect(() => {
+    if (activeReplyRequest) {
+      const phone = getPhoneDigits(activeReplyRequest);
+      setReplyPhone(phone);
+      setReplyMessage(getEnquiryMessage(activeReplyRequest, store.name, locality));
+      setReplySentSuccess('');
+    }
+  }, [activeReplyRequest, store.name, locality]);
+
+  const handleSendWhatsApp = (phone: string, text: string, requestId?: string) => {
+    const digits = phone.replace(/\D/g, '').slice(-10);
+    if (digits.length !== 10) {
+      alert('Please enter a valid 10-digit mobile number to open WhatsApp.');
+      return;
+    }
+    const url = `https://wa.me/91${digits}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+    if (requestId) {
+      void handleMarkResponded(requestId);
+    }
+    setReplySentSuccess('WhatsApp chat opened! Request status updated.');
+  };
+
+  const handleSendSMS = (phone: string, text: string, requestId?: string) => {
+    const digits = phone.replace(/\D/g, '').slice(-10);
+    if (digits.length !== 10) {
+      alert('Please enter a valid 10-digit mobile number to send SMS.');
+      return;
+    }
+    const url = `sms:+91${digits}?body=${encodeURIComponent(text)}`;
+    window.location.href = url;
+    if (requestId) {
+      void handleMarkResponded(requestId);
+    }
+    setReplySentSuccess('SMS composer opened! Request status updated.');
+  };
+
+  const handleMarkResponded = async (requestId: string) => {
+    try {
+      setIsUpdatingStatus(true);
+      await fetch(`/api/offer-requests/${encodeURIComponent(requestId)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'responded' }),
+      });
+      await onRefreshRequests();
+    } catch (err) {
+      console.error('Failed to update request status', err);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const q = query.trim().toLocaleLowerCase();
   const filteredListings = useMemo(() => listings.filter((item) =>
@@ -252,7 +312,7 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
               {categoriesByCount.length ? <div className="space-y-5">{categoriesByCount.map(([category, count]) => <div key={category}><div className="mb-2 flex justify-between text-sm"><span className="font-medium">{category}</span><strong className="text-teal-800">{count}</strong></div><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-700" style={{ width: `${Math.max(5, count / maxCount * 100)}%` }} /></div></div>)}</div> : <EmptyState>Catalog data will appear here when available.</EmptyState>}
             </Panel>
             <Panel title="Recent customer requests" subtitle={`Requests for the ${locality} service area`} action="View requests" onAction={() => setSection('requests')}>
-              {requests.length ? <div className="divide-y divide-slate-100">{requests.slice(0, 5).map((request) => <RequestRow key={request.id} request={request} compact />)}</div> : <EmptyState>No customer requests in this service area yet.</EmptyState>}
+              {requests.length ? <div className="divide-y divide-slate-100">{requests.slice(0, 5).map((request) => <RequestRow key={request.id} request={request} storeName={store.name} locality={locality} compact onOpenReply={(r) => setActiveReplyRequest(r)} onSendWhatsApp={handleSendWhatsApp} onSendSMS={handleSendSMS} />)}</div> : <EmptyState>No customer requests in this service area yet.</EmptyState>}
             </Panel>
           </section>
           <Panel title={`${store.name} brochure visitors`} subtitle="Each browser is counted once for this store’s brochure. This demo count is not a verified people count.">
@@ -299,16 +359,257 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
         </section>}
 
         {section === 'requests' && <Panel title="Customer requests" subtitle="Requests shoppers submitted across Kochi. Each includes their selected locality and PIN." action="Refresh" onAction={() => void onRefreshRequests()}>
-          {filteredRequests.length ? <div className="-mx-5 divide-y divide-slate-100 sm:-mx-6">{filteredRequests.map((request) => <RequestRow key={request.id} request={request} />)}</div> : <EmptyState>{requests.length ? `No requests match “${query}”.` : `There are no customer requests in ${locality}.`}</EmptyState>}
+          {filteredRequests.length ? <div className="-mx-5 divide-y divide-slate-100 sm:-mx-6">{filteredRequests.map((request) => <RequestRow key={request.id} request={request} storeName={store.name} locality={locality} onOpenReply={(r) => setActiveReplyRequest(r)} onSendWhatsApp={handleSendWhatsApp} onSendSMS={handleSendSMS} />)}</div> : <EmptyState>{requests.length ? `No requests match “${query}”.` : `There are no customer requests in ${locality}.`}</EmptyState>}
         </Panel>}
       </main>
+
+      {/* Customer Enquiry Reply Modal (WhatsApp & SMS) */}
+      {activeReplyRequest && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in"
+        >
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-100 text-teal-800">
+                  <MessageSquare className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Respond to Customer Enquiry</h3>
+                  <p className="text-xs text-slate-500">Contact shopper directly via WhatsApp or SMS</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveReplyRequest(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 overflow-y-auto">
+              {/* Product Details Card */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">{activeReplyRequest.itemName}</h4>
+                    <p className="text-xs text-slate-500">{activeReplyRequest.category}{activeReplyRequest.brand ? ` · ${activeReplyRequest.brand}` : ''}</p>
+                  </div>
+                  {activeReplyRequest.targetPriceMinor && (
+                    <span className="font-bold text-xs text-teal-800 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-full">
+                      Target: {formatINR(activeReplyRequest.targetPriceMinor)}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-600">
+                  📍 Shopper Locality: <strong>{activeReplyRequest.locality} ({activeReplyRequest.pinCode})</strong>
+                </p>
+              </div>
+
+              {/* Phone Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Customer Phone Number
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-2 bg-slate-100 text-xs font-semibold rounded-lg text-slate-600 border border-slate-200">
+                    +91
+                  </span>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    placeholder="10-digit number"
+                    value={replyPhone}
+                    onChange={(e) => setReplyPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                {replyPhone.length === 10 && (
+                  <p className="text-[11px] text-emerald-600 mt-1 flex items-center gap-1 font-medium">
+                    <Check className="w-3 h-3" /> Ready to contact (+91 {replyPhone})
+                  </p>
+                )}
+              </div>
+
+              {/* Message Textarea */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Enquiry Response Message
+                </label>
+                <textarea
+                  rows={4}
+                  value={replyMessage}
+                  onChange={(e) => setReplyMessage(e.target.value)}
+                  className="w-full p-3 text-xs sm:text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 leading-relaxed"
+                  placeholder="Type your response to the customer..."
+                />
+              </div>
+
+              {replySentSuccess && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-semibold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{replySentSuccess}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => void handleMarkResponded(activeReplyRequest.id)}
+                disabled={isUpdatingStatus || activeReplyRequest.status === 'responded'}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {activeReplyRequest.status === 'responded' ? '✓ Marked Responded' : 'Mark as Responded'}
+              </button>
+
+              <div className="flex items-center gap-2">
+                {/* WhatsApp Action */}
+                <button
+                  type="button"
+                  onClick={() => handleSendWhatsApp(replyPhone, replyMessage, activeReplyRequest.id)}
+                  style={{ backgroundColor: '#25D366' }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-lg hover:brightness-95 transition-all shadow-xs cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Send WhatsApp</span>
+                </button>
+
+                {/* SMS Action */}
+                <button
+                  type="button"
+                  onClick={() => handleSendSMS(replyPhone, replyMessage, activeReplyRequest.id)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-lg transition-colors cursor-pointer"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Send SMS</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   </div>;
 };
+
+function getPhoneDigits(req: OfferRequest): string {
+  const raw = (req.contactPhone || req.contactMasked || '').replace(/\D/g, '');
+  if (raw.length === 10) return raw;
+  if (raw.length === 12 && raw.startsWith('91')) return raw.slice(2);
+  return '';
+}
+
+function getEnquiryMessage(req: OfferRequest, storeName: string, locality: string): string {
+  const target = req.targetPriceMinor ? ` (Target: ${formatINR(req.targetPriceMinor)})` : '';
+  const brand = req.brand ? ` ${req.brand}` : '';
+  return `Hello! Regarding your enquiry for "${req.itemName}"${brand}${target} in ${req.locality} on LookMyDeals: We have this item available at ${storeName} (${locality}). Please visit our store or reply here for current in-store pricing and offers!`;
+}
 
 const Metric: React.FC<{ icon: typeof Package; label: string; value: number | string; detail: string }> = ({ icon: Icon, label, value, detail }) => <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"><div className="mb-4 flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-100 text-teal-800"><Icon className="h-5 w-5" /></span><span className="text-xs font-medium text-teal-800">Demo data</span></div><p className="text-sm font-medium text-slate-600">{label}</p><p className="mt-1 text-3xl font-bold tracking-tight">{value}</p><p className="mt-1 text-xs text-slate-500">{detail}</p></div>;
 
 const Panel: React.FC<{ title: string; subtitle?: string; action?: string; onAction?: () => void; children: React.ReactNode }> = ({ title, subtitle, action, onAction, children }) => <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6"><div className="mb-5 flex items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{title}</h2>{subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}</div>{action && onAction && <button type="button" onClick={onAction} className="min-h-11 shrink-0 rounded-lg px-3 text-sm font-semibold text-teal-800 hover:bg-teal-50">{action}</button>}</div>{children}</section>;
 
-const RequestRow: React.FC<{ request: OfferRequest; compact?: boolean }> = ({ request, compact = false }) => <article className={`flex flex-wrap items-center justify-between gap-3 ${compact ? 'py-3 first:pt-0 last:pb-0' : 'px-5 py-4 sm:px-6'}`}><div><h3 className="font-semibold">{request.itemName}</h3><p className="mt-1 text-sm text-slate-600">{request.category}{request.brand ? ` · ${request.brand}` : ''}</p><p className="mt-1 text-xs text-slate-500">{request.locality} · {request.pinCode}</p></div>{request.targetPriceMinor ? <span className="rounded-full bg-teal-50 px-3 py-1.5 text-sm font-semibold text-teal-800">Target {formatINR(request.targetPriceMinor)}</span> : <span className="text-xs text-slate-500">No target price</span>}</article>;
+const RequestRow: React.FC<{
+  request: OfferRequest;
+  storeName: string;
+  locality: string;
+  compact?: boolean;
+  onOpenReply?: (req: OfferRequest) => void;
+  onSendWhatsApp?: (phone: string, text: string, reqId: string) => void;
+  onSendSMS?: (phone: string, text: string, reqId: string) => void;
+}> = ({ request, storeName, locality, compact = false, onOpenReply, onSendWhatsApp, onSendSMS }) => {
+  const phone = getPhoneDigits(request);
+  const displayContact = phone ? `+91 ${phone.slice(0, 5)} ${phone.slice(5)}` : (request.contactMasked || 'Contact provided');
+  const defaultMsg = getEnquiryMessage(request, storeName, locality);
+  const isResponded = request.status === 'responded';
+
+  return (
+    <article className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${compact ? 'py-3.5 first:pt-0 last:pb-0' : 'px-5 py-4 sm:px-6'}`}>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <h3 className="font-bold text-slate-900 text-sm sm:text-base">{request.itemName}</h3>
+          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${isResponded ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
+            {isResponded ? 'Responded' : 'Open Enquiry'}
+          </span>
+        </div>
+        <p className="text-xs sm:text-sm text-slate-600">
+          {request.category}{request.brand ? ` · ${request.brand}` : ''}
+        </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 pt-0.5">
+          <span>{request.locality} · {request.pinCode}</span>
+          <span>•</span>
+          <span className="inline-flex items-center gap-1 font-mono font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+            <Phone className="w-3 h-3 text-slate-400" />
+            {displayContact}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 sm:self-center shrink-0">
+        {request.targetPriceMinor ? (
+          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs sm:text-sm font-bold text-teal-800 border border-teal-200/50">
+            Target {formatINR(request.targetPriceMinor)}
+          </span>
+        ) : (
+          <span className="text-xs text-slate-400">No target price</span>
+        )}
+
+        {/* WhatsApp Button */}
+        <button
+          type="button"
+          onClick={() => {
+            if (phone) {
+              onSendWhatsApp?.(phone, defaultMsg, request.id);
+            } else {
+              onOpenReply?.(request);
+            }
+          }}
+          style={{ backgroundColor: '#25D366' }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-lg hover:brightness-95 transition-all shadow-xs cursor-pointer"
+          title="Send WhatsApp message about this enquiry"
+        >
+          <MessageCircle className="w-3.5 h-3.5" />
+          <span>WhatsApp</span>
+        </button>
+
+        {/* SMS Button */}
+        <button
+          type="button"
+          onClick={() => {
+            if (phone) {
+              onSendSMS?.(phone, defaultMsg, request.id);
+            } else {
+              onOpenReply?.(request);
+            }
+          }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+          title="Send SMS message about this enquiry"
+        >
+          <MessageSquare className="w-3.5 h-3.5 text-slate-500" />
+          <span>SMS</span>
+        </button>
+
+        {/* Reply Dialog Button */}
+        <button
+          type="button"
+          onClick={() => onOpenReply?.(request)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/60 rounded-lg transition-colors cursor-pointer"
+          title="Customize response message"
+        >
+          <Send className="w-3 h-3 text-teal-700" />
+          <span>Reply</span>
+        </button>
+      </div>
+    </article>
+  );
+};
+
 const EmptyState: React.FC<{ children: React.ReactNode }> = ({ children }) => <p className="p-8 text-center text-sm text-slate-500">{children}</p>;

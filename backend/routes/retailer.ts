@@ -201,18 +201,25 @@ router.get('/dashboard', requireRetailer, async (req: Request, res: Response) =>
         })),
       })),
       categories,
-      requests: requestRows.map((row) => ({
-        id: String(row.id),
-        itemName: String(row.item_name),
-        brand: String(row.brand || '') || undefined,
-        category: String(row.category),
-        locality: String(row.locality),
-        pinCode: String(row.pin_code),
-        targetPriceMinor: row.target_price_minor === null ? undefined : Number(row.target_price_minor),
-        contactMasked: String(row.contact_reference || '') || undefined,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
-        status: String(row.status),
-      })),
+      requests: requestRows.map((row) => {
+        const rawContact = String(row.contact_reference || '');
+        const digitsOnly = rawContact.replace(/\D/g, '');
+        const isFullPhone = digitsOnly.length === 10 || (digitsOnly.length === 12 && digitsOnly.startsWith('91'));
+        const contactPhone = isFullPhone ? (digitsOnly.length === 12 ? digitsOnly.slice(2) : digitsOnly) : undefined;
+        return {
+          id: String(row.id),
+          itemName: String(row.item_name),
+          brand: String(row.brand || '') || undefined,
+          category: String(row.category),
+          locality: String(row.locality),
+          pinCode: String(row.pin_code),
+          targetPriceMinor: row.target_price_minor === null ? undefined : Number(row.target_price_minor),
+          contactMasked: String(row.contact_reference || '') || undefined,
+          contactPhone,
+          createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+          status: String(row.status),
+        };
+      }),
       uniqueBrochureVisitors: Number(visitorRows[0]?.unique_visitors || 0),
       offerClaims: Number(claimRows[0]?.total_claims || 0),
     });

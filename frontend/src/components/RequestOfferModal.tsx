@@ -94,6 +94,7 @@ export const RequestOfferModal: React.FC<RequestOfferModalProps> = ({
       locality: loc.name,
       pinCode: loc.pinCode,
       targetPriceMinor,
+      contactPhone: cleanPhone,
       contactMasked: maskPhoneNumber(cleanPhone),
     };
 

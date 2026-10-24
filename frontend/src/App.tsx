@@ -73,13 +73,18 @@ export default function App() {
     }
   };
 
-  const brochureMatch = currentPath.match(/^\/brochure\/([^/]+)\/?$/);
+  const brochureMatch = currentPath.match(/^\/brochure\/([^/]+)(?:\/([^/]+))?\/?$/);
   let brochureStoreId: string | null = null;
+  let brochureFileId: string | null = null;
   if (brochureMatch) {
     try {
       brochureStoreId = decodeURIComponent(brochureMatch[1]);
+      if (brochureMatch[2]) {
+        brochureFileId = decodeURIComponent(brochureMatch[2]);
+      }
     } catch {
       brochureStoreId = brochureMatch[1];
+      brochureFileId = brochureMatch[2] || null;
     }
   }
 
@@ -571,6 +576,7 @@ export default function App() {
           <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center p-12 text-sm font-medium text-slate-500">Loading store brochure…</div>}>
             <PublicBrochure
               storeId={brochureStoreId}
+              brochureId={brochureFileId || undefined}
               onNavigateHome={handleLogoClick}
             />
           </Suspense>
@@ -716,11 +722,10 @@ export default function App() {
                     className="flex flex-col items-center group cursor-pointer"
                   >
                     <div
-                      className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white border-2 flex items-center justify-center p-2.5 transition-all shadow-xs ${
-                        isSelected
+                      className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white border-2 flex items-center justify-center p-2.5 transition-all shadow-xs ${isSelected
                           ? 'border-[#007A78] shadow-md scale-105 ring-4 ring-[#007A78]/10'
                           : 'border-slate-200/90 group-hover:border-[#007A78]/60 group-hover:shadow-sm'
-                      }`}
+                        }`}
                     >
                       {store.logo}
                     </div>
@@ -752,11 +757,10 @@ export default function App() {
                   <div
                     key={cat.id}
                     onClick={() => setSelectedCategory(isSelected ? null : cat.name)}
-                    className={`bg-white rounded-xl p-4 sm:p-5 border transition-all flex flex-col items-center text-center cursor-pointer shadow-xs ${
-                      isSelected
+                    className={`bg-white rounded-xl p-4 sm:p-5 border transition-all flex flex-col items-center text-center cursor-pointer shadow-xs ${isSelected
                         ? 'border-[#007A78] shadow-md ring-2 ring-[#007A78]/20 bg-teal-50/20 scale-[1.02]'
                         : 'border-slate-200/80 hover:border-teal-400 hover:shadow-sm hover:-translate-y-0.5'
-                    }`}
+                      }`}
                   >
                     <div className="mb-3 flex items-center justify-center h-14 w-14">
                       {cat.icon}

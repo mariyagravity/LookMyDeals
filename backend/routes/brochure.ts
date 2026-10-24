@@ -240,7 +240,18 @@ router.post('/:brochureId/crops', requireRetailer, createRateLimiter(5, 60_000),
     const itemId = path.parse(file.originalname).name;
     const mimeType = detectMimeType(file.buffer);
     if (!z.string().uuid().safeParse(itemId).success || !mimeType || !mimeType.startsWith('image/')) return null;
-    return { file, itemId, mimeType, key: `brochure-crops/${itemId}${safeExtension(mimeType)}` };
+    const rawCropBox = typeof req.body?.[`cropBox_${itemId}`] === 'string' ? req.body[`cropBox_${itemId}`] : '';
+    let cropBox: z.infer<typeof CropBoxSchema> | null = null;
+    if (rawCropBox) {
+      try {
+        const parsedCropBox = CropBoxSchema.safeParse(JSON.parse(rawCropBox));
+        if (!parsedCropBox.success || !validCropBox(parsedCropBox.data)) return null;
+        cropBox = parsedCropBox.data;
+      } catch {
+        return null;
+      }
+    }
+    return { file, itemId, mimeType, cropBox, key: `brochure-crops/${itemId}${safeExtension(mimeType)}` };
   });
   if (prepared.some((item) => !item)) return res.status(415).json({ error: { code: 'INVALID_CROP_FILE', message: 'A product crop had an unsupported image format.' } });
 
@@ -260,8 +271,8 @@ router.post('/:brochureId/crops', requireRetailer, createRateLimiter(5, 60_000),
       await writeFile(absolutePath, entry.file.buffer);
       writtenFiles.push(absolutePath);
       await connection.execute(
-        'UPDATE brochure_items SET crop_storage_key = ? WHERE id = ?',
-        [entry.key, entry.itemId]
+        `UPDATE brochure_items SET crop_storage_key = ?, crop_box = COALESCE(?, crop_box) WHERE id = ?`,
+        [entry.key, entry.cropBox ? JSON.stringify(entry.cropBox) : null, entry.itemId]
       );
     }
     await connection.commit();

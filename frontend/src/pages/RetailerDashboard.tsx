@@ -323,6 +323,7 @@ export const RetailerDashboard: React.FC<RetailerDashboardProps> = ({ store, loc
     if (!activeBrochureId) throw new Error('Upload a brochure before editing product crops.');
     const cropForm = new FormData();
     cropForm.append('crops', blob, `${candidate.id}.jpg`);
+    cropForm.append(`cropBox_${candidate.id}`, JSON.stringify(cropBox));
     const response = await fetch(`/api/brochure/${encodeURIComponent(activeBrochureId)}/crops`, { method: 'POST', body: cropForm });
     const result = await readApiJson<{ error?: { message?: string } }>(response);
     if (!response.ok) throw new Error(result.error?.message || 'Could not save this crop.');

@@ -69,17 +69,19 @@ export default function App() {
       </Suspense>
     );
   }
-  const brochureMatch = pathname.match(/^\/brochure\/([^/]+)\/?$/);
+  const brochureMatch = pathname.match(/^\/brochure\/([^/]+)(?:\/([^/]+))?\/?$/);
   if (brochureMatch) {
     let storeId = brochureMatch[1];
+    let brochureId = brochureMatch[2];
     try {
       storeId = decodeURIComponent(storeId);
+      if (brochureId) brochureId = decodeURIComponent(brochureId);
     } catch {
       /* Safe not-found */
     }
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-50 p-8 text-sm text-slate-600">Loading store brochure…</div>}>
-        <PublicBrochure storeId={storeId} />
+        <PublicBrochure storeId={storeId} brochureId={brochureId} />
       </Suspense>
     );
   }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, CalendarDays, ChevronRight, MapPin, Share2, Store, Ticket } from 'lucide-react';
+import { ArrowLeft, BookOpen, CalendarDays, ChevronRight, MapPin, Share2, Store, Ticket, X } from 'lucide-react';
 import { EnrichedListing, Store as StoreType } from '../types';
 import { readApiJson } from '../lib/api';
 import { formatDate, formatINR } from '../lib/format';
@@ -15,9 +15,21 @@ interface StoreBrochure {
   uploadedAt: string;
   expiresAt: string;
   fileUrl: string;
-  items: { id: string; validUntil: string }[];
+  items: {
+    id: string;
+    productName: string;
+    brand: string;
+    category: string;
+    packSize: string;
+    listedPriceMinor: number | null;
+    offerPriceMinor: number | null;
+    validUntil: string;
+    cropUrl: string;
+    pageNumber: number;
+    cropBox: { x: number; y: number; width: number; height: number } | null;
+  }[];
 }
-interface PublicBrochureProps { storeId: string }
+interface PublicBrochureProps { storeId: string; brochureId?: string }
 
 function brochureExpiry(brochure: StoreBrochure): string {
   if (brochure.expiresAt) return brochure.expiresAt;
@@ -25,7 +37,7 @@ function brochureExpiry(brochure: StoreBrochure): string {
   return productDates[productDates.length - 1] || '';
 }
 
-export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
+export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId, brochureId }) => {
   const [store, setStore] = useState<StoreType | null>(null);
   const [listings, setListings] = useState<EnrichedListing[]>([]);
   const [brochures, setBrochures] = useState<StoreBrochure[]>([]);
@@ -33,6 +45,7 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
   const [error, setError] = useState('');
   const [shareMessage, setShareMessage] = useState('');
   const [claimingListing, setClaimingListing] = useState<EnrichedListing | null>(null);
+  const [selectedBrochureProduct, setSelectedBrochureProduct] = useState<StoreBrochure['items'][number] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +111,11 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
     }
   };
 
+  const selectedBrochure = brochures.find((brochure) => brochure.id === brochureId) || null;
+  const detailProducts = selectedBrochure?.items || [];
+  const detailCategories = [...new Set(detailProducts.map((item) => item.category).filter(Boolean))];
+  const listingForProduct = (product: StoreBrochure['items'][number]) => listings.find((listing) => listing.product.name === product.productName && listing.product.brand === product.brand);
+
   return <div className="min-h-screen bg-[#f6f9fa] pb-16 text-slate-900">
     <header className="fixed inset-x-0 top-0 z-40 h-14 border-b border-slate-200 bg-[#f6f9fa]/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex h-full max-w-4xl items-center px-4 sm:px-6">
@@ -110,13 +128,33 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
     </header>
     <main className="mx-auto max-w-4xl space-y-7 px-4 pb-10 pt-20 sm:px-6">
       {loading ? <div className="p-10 text-center text-sm text-slate-600">Loading store flyers…</div> : error && !store ? <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-900">{error}</div> : store && <>
-        <section className="mx-auto flex max-w-3xl items-center gap-4 sm:gap-5">
+        {!brochureId && <section className="mx-auto flex max-w-3xl items-center gap-4 sm:gap-5">
           <div className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl border border-slate-300 bg-white sm:h-24 sm:w-24"><LuluLogo /></div>
           <div><h1 className="text-3xl font-black tracking-tight sm:text-4xl">{store.name.replace(/\s+Hypermarket$/i, '')}</h1><p className="mt-1 flex items-center gap-2 text-base text-slate-600 sm:text-lg"><MapPin className="h-4 w-4 shrink-0" />Explore current flyers and offers near you.</p></div>
-        </section>
+        </section>}
         {shareMessage && <p role="status" className="mx-auto max-w-3xl text-sm font-medium text-teal-800">{shareMessage}</p>}
         {error && <p role="status" className="mx-auto max-w-3xl text-sm text-amber-800">{error}</p>}
 
+        {brochureId && selectedBrochure ? <>
+          <section className="mx-auto max-w-4xl">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
+              <div><p className="text-xs font-bold uppercase tracking-wider text-teal-800">Verified flyer</p><h1 className="mt-1 text-3xl font-black">{selectedBrochure.fileName.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ')}</h1><p className="mt-2 flex items-center gap-2 text-sm text-slate-600"><CalendarDays className="h-4 w-4" />{brochureExpiry(selectedBrochure) ? `Valid until ${formatDate(brochureExpiry(selectedBrochure))}` : 'Validity not provided'}</p></div>
+              <button type="button" onClick={() => void shareBrochure(selectedBrochure)} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-teal-200 bg-white px-4 text-sm font-semibold text-teal-800"><Share2 className="h-4 w-4" />Share</button>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 p-2 shadow-sm sm:p-4">
+              {selectedBrochure.mimeType.startsWith('image/') ? <div className="relative mx-auto w-fit max-w-full">
+                <img src={selectedBrochure.fileUrl} alt={selectedBrochure.fileName} className="block h-auto max-h-[75vh] max-w-full object-contain" />
+                {detailProducts.filter((product) => product.pageNumber <= 1 && product.cropBox).map((product) => <button key={product.id} type="button" onClick={() => setSelectedBrochureProduct(product)} aria-label={`View ${product.productName}`} title={product.productName} className="absolute z-10 rounded-md border-2 border-dashed border-teal-700/50 bg-teal-500/5 transition hover:border-teal-700 hover:bg-teal-500/20 focus:outline-none focus:ring-2 focus:ring-teal-700" style={{ left: `${product.cropBox!.x * 100}%`, top: `${product.cropBox!.y * 100}%`, width: `${product.cropBox!.width * 100}%`, height: `${product.cropBox!.height * 100}%` }} />)}
+              </div> : <iframe title={selectedBrochure.fileName} src={selectedBrochure.fileUrl} className="h-[70vh] w-full border-0 bg-white" />}
+            </div>
+          </section>
+
+          {detailCategories.length > 0 && <section className="mx-auto max-w-4xl"><p className="text-xs font-bold uppercase tracking-wider text-teal-800">Browse by type</p><h2 className="mt-1 text-lg font-bold">Explore offers by category</h2><div className="mt-3 flex flex-wrap gap-2">{detailCategories.map((category) => <a key={category} href={`#category-${encodeURIComponent(category)}`} className="rounded-full border border-teal-100 bg-white px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50">{category} <span className="text-slate-500">{detailProducts.filter((item) => item.category === category).length}</span></a>)}</div></section>}
+
+          <section className="mx-auto max-w-4xl space-y-6"><h2 className="text-xl font-bold">Products in this flyer</h2>{detailCategories.map((category) => <div key={category} id={`category-${category}`} className="scroll-mt-20"><h3 className="mb-3 text-base font-bold">{category}</h3><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{detailProducts.filter((item) => item.category === category).map((product) => <article key={product.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><button type="button" onClick={() => setSelectedBrochureProduct(product)} className="w-full text-left"><span className="flex h-40 items-center justify-center overflow-hidden rounded-lg bg-slate-50">{product.cropUrl ? <img src={product.cropUrl} alt={product.productName} loading="lazy" className="h-full w-full object-contain" /> : <BookOpen className="h-8 w-8 text-slate-300" />}</span><span className="mt-2 block line-clamp-2 min-h-10 text-sm font-semibold">{product.productName}</span><span className="mt-1 block text-xs text-slate-500">{[product.brand, product.packSize].filter(Boolean).join(' · ')}</span></button><div className="mt-2 flex items-baseline gap-2"><strong className="text-base text-teal-800">{product.offerPriceMinor !== null ? formatINR(product.offerPriceMinor) : product.listedPriceMinor !== null ? formatINR(product.listedPriceMinor) : 'See flyer'}</strong>{product.offerPriceMinor !== null && product.listedPriceMinor !== null && product.offerPriceMinor < product.listedPriceMinor && <span className="text-xs text-slate-400 line-through">{formatINR(product.listedPriceMinor)}</span>}</div></article>)}</div></div>)}</section>
+
+          <section className="mx-auto max-w-4xl rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Visit {store.name}</h2><p className="mt-2 flex items-start gap-2 text-sm text-slate-600"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-teal-800" />{store.address || 'Store address unavailable'}</p>{store.address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-teal-800 px-4 text-sm font-semibold text-white">Get directions</a>}</section>
+        </> : brochureId ? <div role="alert" className="mx-auto max-w-3xl rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">This flyer was not found or is no longer published. <a className="font-semibold text-teal-800 underline" href={`/brochure/${encodeURIComponent(storeId)}`}>Return to store flyers</a>.</div> : <>
         <section aria-label={`${store.name} flyers`}>
           <h2 className="mx-auto mb-4 max-w-3xl flex items-center gap-2 text-xl font-bold"><BookOpen className="h-5 w-5 text-teal-800" />Flyers</h2>
           {brochures.length ? <div className="mx-auto grid max-w-3xl justify-items-center gap-5 sm:grid-cols-2 sm:gap-6">
@@ -132,7 +170,7 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
                   <p className="text-[11px] font-bold uppercase tracking-wider text-teal-800">Weekly circular</p>
                   <h3 className="mt-1.5 line-clamp-2 min-h-12 text-lg font-bold leading-6">{title}</h3>
                   <p className="mt-1 flex min-h-6 items-center gap-2 text-sm text-slate-600"><CalendarDays className="h-4 w-4 shrink-0" />{expiry ? `Valid until ${formatDate(expiry)}` : 'Expiry date not set'}</p>
-                  <a href={brochure.fileUrl} target="_blank" rel="noreferrer" className="mt-3 flex min-h-11 items-center justify-center rounded-xl border border-amber-500 bg-amber-400 px-4 text-sm font-bold text-slate-950 hover:bg-amber-300">View Full Flyer</a>
+                  <a href={`/brochure/${encodeURIComponent(storeId)}/${encodeURIComponent(brochure.id)}`} className="mt-3 flex min-h-11 items-center justify-center rounded-xl border border-amber-500 bg-amber-400 px-4 text-sm font-bold text-slate-950 hover:bg-amber-300">View Full Flyer</a>
                 </div>
               </article>;
             })}
@@ -156,8 +194,21 @@ export const PublicBrochure: React.FC<PublicBrochureProps> = ({ storeId }) => {
             </article>)}</div>
           </section>) : <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">There are no published offers for this store yet.</div>}
         </section>
+        </>}
       </>}
     </main>
+    {selectedBrochureProduct && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedBrochureProduct(null); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="flyer-product-title" className="relative w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <button type="button" onClick={() => setSelectedBrochureProduct(null)} aria-label="Close product details" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+        <div className="flex h-56 items-center justify-center rounded-xl bg-slate-50 p-3">{selectedBrochureProduct.cropUrl && <img src={selectedBrochureProduct.cropUrl} alt={selectedBrochureProduct.productName} className="h-full w-full object-contain" />}</div>
+        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-teal-800">{selectedBrochureProduct.category}</p>
+        <h2 id="flyer-product-title" className="mt-1 text-xl font-bold">{selectedBrochureProduct.productName}</h2>
+        <p className="mt-1 text-sm text-slate-500">{[selectedBrochureProduct.brand, selectedBrochureProduct.packSize].filter(Boolean).join(' · ')}</p>
+        <div className="mt-4 flex items-baseline gap-2"><strong className="text-2xl text-teal-800">{selectedBrochureProduct.offerPriceMinor !== null ? formatINR(selectedBrochureProduct.offerPriceMinor) : selectedBrochureProduct.listedPriceMinor !== null ? formatINR(selectedBrochureProduct.listedPriceMinor) : 'See flyer'}</strong>{selectedBrochureProduct.offerPriceMinor !== null && selectedBrochureProduct.listedPriceMinor !== null && selectedBrochureProduct.offerPriceMinor < selectedBrochureProduct.listedPriceMinor && <span className="text-sm text-slate-400 line-through">{formatINR(selectedBrochureProduct.listedPriceMinor)}</span>}</div>
+        {selectedBrochureProduct.validUntil && <p className="mt-2 text-sm text-slate-500">Valid until {formatDate(selectedBrochureProduct.validUntil)}</p>}
+        {listingForProduct(selectedBrochureProduct)?.couponCode && <button type="button" onClick={() => { const listing = listingForProduct(selectedBrochureProduct); if (listing) { setSelectedBrochureProduct(null); setClaimingListing(listing); } }} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-teal-800 text-sm font-bold text-white hover:bg-teal-900"><Ticket className="h-4 w-4" />Claim offer</button>}
+      </section>
+    </div>}
     {claimingListing && <ClaimModal listing={claimingListing} onClose={() => setClaimingListing(null)} onClaimSuccess={(claim) => {
       void fetch('/api/claims', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ claimId: claim.id, listingId: claim.listingId }) }).catch(() => undefined);
     }} />}

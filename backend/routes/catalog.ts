@@ -206,10 +206,15 @@ router.get('/stores/:storeId/brochures', async (req: Request, res: Response) => 
     const [rows] = await db.execute<RowDataPacket[]>(`
       SELECT b.id, b.original_file_name, b.mime_type, b.uploaded_at, b.expires_at,
              bi.id AS item_id, bi.product_name, bi.brand, bi.pack_size, bi.category,
-             bi.listed_price_minor, bi.offer_price_minor, bi.valid_until, bi.crop_storage_key
+             bi.listed_price_minor, bi.offer_price_minor, bi.valid_until, bi.crop_storage_key,
+             bi.page_number, bi.crop_box
       FROM brochures b
       LEFT JOIN brochure_items bi ON bi.brochure_id = b.id AND bi.review_status = 'approved'
-      WHERE b.store_id = ? AND b.processing_status = 'approved'
+      WHERE b.store_id = ?
+        AND EXISTS (
+          SELECT 1 FROM brochure_items approved_item
+          WHERE approved_item.brochure_id = b.id AND approved_item.review_status = 'approved'
+        )
       ORDER BY b.uploaded_at DESC, bi.created_at, bi.product_name
     `, [storeId]);
     const brochures = new Map<string, { id: string; fileName: string; mimeType: string; uploadedAt: string; expiresAt: string; fileUrl: string; items: Record<string, unknown>[] }>();
@@ -236,6 +241,17 @@ router.get('/stores/:storeId/brochures', async (req: Request, res: Response) => 
           listedPriceMinor: row.listed_price_minor === null ? null : Number(row.listed_price_minor),
           offerPriceMinor: row.offer_price_minor === null ? null : Number(row.offer_price_minor),
           validUntil: row.valid_until ? (row.valid_until instanceof Date ? row.valid_until.toISOString().slice(0, 10) : String(row.valid_until).slice(0, 10)) : '',
+          pageNumber: Number(row.page_number || 1),
+          cropBox: (() => {
+            try {
+              const value = typeof row.crop_box === 'string' ? JSON.parse(row.crop_box) : row.crop_box;
+              if (!value || typeof value !== 'object') return null;
+              const { x, y, width, height } = value as { x?: unknown; y?: unknown; width?: unknown; height?: unknown };
+              return [x, y, width, height].every((coordinate) => typeof coordinate === 'number' && Number.isFinite(coordinate))
+                ? { x, y, width, height }
+                : null;
+            } catch { return null; }
+          })(),
           cropUrl: row.crop_storage_key ? `/api/catalog/stores/${encodeURIComponent(storeId)}/brochures/${encodeURIComponent(id)}/items/${encodeURIComponent(String(row.item_id))}/crop` : '',
         });
       }
@@ -249,7 +265,12 @@ router.get('/stores/:storeId/brochures', async (req: Request, res: Response) => 
 router.get('/stores/:storeId/brochures/:brochureId/file', async (req: Request, res: Response) => {
   try {
     const [rows] = await db.execute<RowDataPacket[]>(
-      'SELECT storage_key, mime_type FROM brochures WHERE id = ? AND store_id = ? AND processing_status = \'approved\'',
+      `SELECT b.storage_key, b.mime_type FROM brochures b
+       WHERE b.id = ? AND b.store_id = ?
+         AND EXISTS (
+           SELECT 1 FROM brochure_items approved_item
+           WHERE approved_item.brochure_id = b.id AND approved_item.review_status = 'approved'
+         )`,
       [req.params.brochureId, req.params.storeId]
     );
     const row = rows[0];
@@ -268,7 +289,7 @@ router.get('/stores/:storeId/brochures/:brochureId/items/:itemId/crop', async (r
   try {
     const [rows] = await db.execute<RowDataPacket[]>(`
       SELECT bi.crop_storage_key FROM brochure_items bi JOIN brochures b ON b.id = bi.brochure_id
-      WHERE bi.id = ? AND b.id = ? AND b.store_id = ? AND b.processing_status = 'approved' AND bi.review_status = 'approved'
+      WHERE bi.id = ? AND b.id = ? AND b.store_id = ? AND bi.review_status = 'approved'
     `, [req.params.itemId, req.params.brochureId, req.params.storeId]);
     const storageKey = String(rows[0]?.crop_storage_key || '');
     if (!storageKey.startsWith('brochure-crops/')) return res.status(404).end();

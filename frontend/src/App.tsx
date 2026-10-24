@@ -16,13 +16,7 @@ import { RequestOfferModal } from './components/RequestOfferModal';
 import {
   LookMyDealsLogo,
   LuluLogo,
-  NestoLogo,
-  MyGLogo,
   SmartBazaarLogo,
-  KalyanLogo,
-  SafariLogo,
-  CarrefourLogo,
-  OxygenLogo,
 } from './components/BrandLogos';
 import {
   CategoryIconGroceries,
@@ -61,25 +55,38 @@ const PublicBrochure = lazy(() => import('./pages/PublicBrochure').then((module)
 const RetailerPortal = lazy(() => import('./pages/RetailerPortal').then((module) => ({ default: module.RetailerPortal })));
 
 export default function App() {
-  const pathname = window.location.pathname;
-  if (pathname.replace(/\/$/, '') === '/retailer') {
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = (path: string) => {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+      setCurrentPath(path);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const brochureMatch = currentPath.match(/^\/brochure\/([^/]+)\/?$/);
+  let brochureStoreId: string | null = null;
+  if (brochureMatch) {
+    try {
+      brochureStoreId = decodeURIComponent(brochureMatch[1]);
+    } catch {
+      brochureStoreId = brochureMatch[1];
+    }
+  }
+
+  if (currentPath.replace(/\/$/, '') === '/retailer') {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-50 p-8 text-sm text-slate-600">Loading retailer sign in…</div>}>
         <RetailerPortal />
-      </Suspense>
-    );
-  }
-  const brochureMatch = pathname.match(/^\/brochure\/([^/]+)\/?$/);
-  if (brochureMatch) {
-    let storeId = brochureMatch[1];
-    try {
-      storeId = decodeURIComponent(storeId);
-    } catch {
-      /* Safe not-found */
-    }
-    return (
-      <Suspense fallback={<div className="min-h-screen bg-slate-50 p-8 text-sm text-slate-600">Loading store brochure…</div>}>
-        <PublicBrochure storeId={storeId} />
       </Suspense>
     );
   }
@@ -255,13 +262,7 @@ export default function App() {
   // Brand stores row data
   const brandStores = [
     { id: 'lulu', name: 'Lulu', logo: <LuluLogo /> },
-    { id: 'nesto', name: 'Nesto', logo: <NestoLogo /> },
-    { id: 'myg', name: 'MyG', logo: <MyGLogo /> },
     { id: 'smart_bazaar', name: 'Smart Bazaar', logo: <SmartBazaarLogo /> },
-    { id: 'kalyan', name: 'Kalyan', logo: <KalyanLogo /> },
-    { id: 'safari', name: 'Safari', logo: <SafariLogo /> },
-    { id: 'carrefour', name: 'Carrefour', logo: <CarrefourLogo /> },
-    { id: 'oxygen', name: 'Oxygen', logo: <OxygenLogo /> },
   ];
 
   // Category cards data matching exact counts and icons from reference screenshot
@@ -279,6 +280,14 @@ export default function App() {
     { id: 'frozen', name: 'Frozen Food', count: '2+ Deals', icon: <CategoryIconFrozenFood /> },
   ];
 
+  const handleLogoClick = () => {
+    setViewMode('shopper');
+    setSelectedCategory(null);
+    setSelectedStore(null);
+    setSearchQuery('');
+    navigateTo('/');
+  };
+
   return (
     <div className="min-h-screen bg-[#FBFDFE] text-[#0F172A] flex flex-col font-sans antialiased">
       {/* 1. TOP NAVBAR */}
@@ -287,7 +296,7 @@ export default function App() {
           {/* Brand Logo & Desktop Search Bar */}
           <div className="flex items-center">
             <div
-              onClick={() => { setViewMode('shopper'); setSelectedCategory(null); setSelectedStore(null); }}
+              onClick={handleLogoClick}
               className="shrink-0 flex items-center cursor-pointer"
             >
               <LookMyDealsLogo />
@@ -299,7 +308,17 @@ export default function App() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (brochureStoreId && e.target.value) {
+                    navigateTo('/');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && brochureStoreId) {
+                    navigateTo('/');
+                  }
+                }}
                 placeholder="Search products, deals..."
                 className="w-full bg-[#F8FAFC] border-[1.5px] border-[#E2E8F0] rounded-[20px] text-[#0F172A] text-[13px] lg:text-[14px] font-medium pl-9 pr-4 py-1.5 lg:py-2 focus:bg-white focus:border-[#FBBB12] focus:ring-4 focus:ring-[#FBBB12]/20 transition-all outline-none placeholder:text-[#94A3B8] placeholder:font-medium"
               />
@@ -310,20 +329,24 @@ export default function App() {
           <nav className="hidden lg:flex items-center gap-1 xl:gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => {
-                setViewMode('shopper');
-                setSelectedCategory(null);
-                setSelectedStore(null);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
+              onClick={handleLogoClick}
               className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors cursor-pointer"
             >
               Discover
             </button>
             <a
               href="#categories"
-              onClick={() => {
-                if (viewMode !== 'shopper') setViewMode('shopper');
+              onClick={(e) => {
+                if (brochureStoreId) {
+                  e.preventDefault();
+                  navigateTo('/');
+                  setTimeout(() => {
+                    const el = document.getElementById('categories');
+                    el?.scrollIntoView({ behavior: 'smooth' });
+                  }, 100);
+                } else if (viewMode !== 'shopper') {
+                  setViewMode('shopper');
+                }
               }}
               className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors inline-block"
             >
@@ -415,7 +438,19 @@ export default function App() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (brochureStoreId && e.target.value) {
+                    setIsMobileMenuOpen(false);
+                    navigateTo('/');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && brochureStoreId) {
+                    setIsMobileMenuOpen(false);
+                    navigateTo('/');
+                  }
+                }}
                 placeholder="Search products, deals..."
                 className="w-full bg-[#F8FAFC] border-[1.5px] border-[#E2E8F0] rounded-[20px] text-[#0F172A] text-[13px] font-medium pl-9 pr-4 py-2 focus:bg-white focus:border-[#FBBB12] focus:ring-4 focus:ring-[#FBBB12]/20 transition-all outline-none placeholder:text-[#94A3B8]"
               />
@@ -426,21 +461,27 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setViewMode('shopper');
-                  setSelectedCategory(null);
-                  setSelectedStore(null);
                   setIsMobileMenuOpen(false);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  handleLogoClick();
                 }}
-                className="text-left px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors"
+                className="text-left px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors cursor-pointer"
               >
                 Discover
               </button>
               <a
                 href="#categories"
-                onClick={() => {
-                  if (viewMode !== 'shopper') setViewMode('shopper');
+                onClick={(e) => {
                   setIsMobileMenuOpen(false);
+                  if (brochureStoreId) {
+                    e.preventDefault();
+                    navigateTo('/');
+                    setTimeout(() => {
+                      const el = document.getElementById('categories');
+                      el?.scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
+                  } else if (viewMode !== 'shopper') {
+                    setViewMode('shopper');
+                  }
                 }}
                 className="text-left px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors"
               >
@@ -523,6 +564,15 @@ export default function App() {
           </div>
           <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500">Loading Retailer Portal…</div>}>
             <RetailerPortal />
+          </Suspense>
+        </main>
+      ) : brochureStoreId ? (
+        <main className="flex-1 w-full flex flex-col">
+          <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center p-12 text-sm font-medium text-slate-500">Loading store brochure…</div>}>
+            <PublicBrochure
+              storeId={brochureStoreId}
+              onNavigateHome={handleLogoClick}
+            />
           </Suspense>
         </main>
       ) : (
@@ -624,7 +674,7 @@ export default function App() {
             </div>
 
             {/* Circular Brand Logos Row */}
-            <div className="grid grid-cols-4 sm:grid-cols-8 gap-4 sm:gap-6">
+            <div className="flex items-center gap-6 sm:gap-10">
               {brandStores.map((store) => {
                 const isSelected = selectedStore === store.name;
                 return (
@@ -638,6 +688,13 @@ export default function App() {
                           return;
                         }
                       }
+                      if (store.id === 'smart_bazaar') {
+                        const smartStore = catalog.stores.find((catalogStore) => catalogStore.name.toLowerCase().includes('smart'));
+                        if (smartStore) {
+                          window.location.href = `/brochure/${encodeURIComponent(smartStore.id)}`;
+                          return;
+                        }
+                      }
                       setSelectedStore(isSelected ? null : store.name);
                     }}
                     role="link"
@@ -648,6 +705,10 @@ export default function App() {
                         if (store.id === 'lulu') {
                           const luluStore = catalog.stores.find((catalogStore) => catalogStore.name.toLowerCase().includes('lulu'));
                           if (luluStore) { window.location.href = `/brochure/${encodeURIComponent(luluStore.id)}`; return; }
+                        }
+                        if (store.id === 'smart_bazaar') {
+                          const smartStore = catalog.stores.find((catalogStore) => catalogStore.name.toLowerCase().includes('smart'));
+                          if (smartStore) { window.location.href = `/brochure/${encodeURIComponent(smartStore.id)}`; return; }
                         }
                         setSelectedStore(isSelected ? null : store.name);
                       }
@@ -663,7 +724,7 @@ export default function App() {
                     >
                       {store.logo}
                     </div>
-                    <span className="mt-2 text-xs font-bold text-slate-800 text-center group-hover:text-[#007A78] transition-colors truncate max-w-[80px]">
+                    <span className="mt-2 text-xs font-bold text-slate-800 text-center group-hover:text-[#007A78] transition-colors truncate max-w-[90px]">
                       {store.name}
                     </span>
                   </div>
@@ -873,75 +934,108 @@ export default function App() {
               </div>
             </div>
           </section>
-
-          {/* 7. FOOTER */}
-          <footer className="bg-white border-t border-slate-200 pt-12 pb-6 text-xs text-slate-600 mt-auto">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
-                {/* Col 1: Brand & Details */}
-                <div className="space-y-3">
-                  <LookMyDealsLogo />
-                  <p className="text-xs text-slate-500 leading-relaxed pr-4">
-                    Know the real price before you walk in. Find the best TV, Laptop, AC & Mobile deals at Croma, Lulu, myG & Oxygen stores near you.
-                  </p>
-                  <div className="flex items-center gap-2 pt-1 text-slate-500">
-                    <a href="#web" className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-50 hover:text-teal-700 transition-colors">
-                      <Globe className="w-4 h-4" />
-                    </a>
-                    <a href="mailto:care@lookmydeals.com" className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-50 hover:text-teal-700 transition-colors">
-                      <Mail className="w-4 h-4" />
-                    </a>
-                    <a href="tel:+914842727777" className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-50 hover:text-teal-700 transition-colors">
-                      <Phone className="w-4 h-4" />
-                    </a>
-                  </div>
-                </div>
-
-                {/* Col 2: Quick Links */}
-                <div>
-                  <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-xs mb-3">
-                    QUICK LINKS
-                  </h4>
-                  <ul className="space-y-2 text-xs">
-                    <li><a href="#home" className="hover:text-teal-700 transition-colors">Home</a></li>
-                    <li><a href="#about" className="hover:text-teal-700 transition-colors">About Us</a></li>
-                    <li><a href="#categories" className="hover:text-teal-700 transition-colors">Categories</a></li>
-                    <li><a href="#nearby" className="hover:text-teal-700 transition-colors">Nearby Stores</a></li>
-                  </ul>
-                </div>
-
-                {/* Col 3: Support */}
-                <div>
-                  <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-xs mb-3">
-                    SUPPORT
-                  </h4>
-                  <ul className="space-y-2 text-xs">
-                    <li><a href="#help" className="hover:text-teal-700 transition-colors">Help Center</a></li>
-                    <li><a href="#faq" className="hover:text-teal-700 transition-colors">FAQ</a></li>
-                    <li><a href="#contact" className="hover:text-teal-700 transition-colors">Contact Us</a></li>
-                    <li><a href="#privacy" className="hover:text-teal-700 transition-colors">Privacy Policy</a></li>
-                  </ul>
-                </div>
-
-                {/* Col 4: Empty space / Brand mission */}
-                <div className="space-y-2">
-                  <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-xs mb-3">
-                    OFFLINE SHOPPING UTILITY
-                  </h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Designed for shoppers across Kochi, Kerala. Compare prices, save to reminder cart, and walk in with verified promotional codes.
-                  </p>
-                </div>
-              </div>
-
-              {/* Bottom Copyright Bar */}
-              <div className="pt-6 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                <p>© 2026 LOOK MY DEALS — All Rights Reserved</p>
-              </div>
-            </div>
-          </footer>
         </main>
       )}
+
+      {/* 3. COMMON FOOTER (Rendered for all public / brochure pages) */}
+      <footer className="bg-white border-t border-slate-200 pt-12 pb-6 text-xs text-slate-600 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
+            {/* Col 1: Brand & Details */}
+            <div className="space-y-3">
+              <div onClick={handleLogoClick} className="cursor-pointer inline-block">
+                <LookMyDealsLogo />
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed pr-4">
+                Know the real price before you walk in. Find the best TV, Laptop, AC & Mobile deals at Croma, Lulu, myG & Oxygen stores near you.
+              </p>
+              <div className="flex items-center gap-2 pt-1 text-slate-500">
+                <a href="#web" className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-50 hover:text-teal-700 transition-colors">
+                  <Globe className="w-4 h-4" />
+                </a>
+                <a href="mailto:care@lookmydeals.com" className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-50 hover:text-teal-700 transition-colors">
+                  <Mail className="w-4 h-4" />
+                </a>
+                <a href="tel:+914842727777" className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center hover:bg-slate-50 hover:text-teal-700 transition-colors">
+                  <Phone className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+
+            {/* Col 2: Quick Links */}
+            <div>
+              <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-xs mb-3">
+                QUICK LINKS
+              </h4>
+              <ul className="space-y-2 text-xs">
+                <li><button type="button" onClick={handleLogoClick} className="hover:text-teal-700 transition-colors cursor-pointer">Home</button></li>
+                <li>
+                  <a
+                    href="#categories"
+                    onClick={(e) => {
+                      if (brochureStoreId) {
+                        e.preventDefault();
+                        handleLogoClick();
+                        setTimeout(() => {
+                          document.getElementById('categories')?.scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                      }
+                    }}
+                    className="hover:text-teal-700 transition-colors cursor-pointer"
+                  >
+                    Categories
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="#nearby"
+                    onClick={(e) => {
+                      if (brochureStoreId) {
+                        e.preventDefault();
+                        handleLogoClick();
+                        setTimeout(() => {
+                          document.getElementById('supermarkets')?.scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                      }
+                    }}
+                    className="hover:text-teal-700 transition-colors cursor-pointer"
+                  >
+                    Nearby Stores
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            {/* Col 3: Support */}
+            <div>
+              <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-xs mb-3">
+                SUPPORT
+              </h4>
+              <ul className="space-y-2 text-xs">
+                <li><a href="#help" className="hover:text-teal-700 transition-colors">Help Center</a></li>
+                <li><a href="#faq" className="hover:text-teal-700 transition-colors">FAQ</a></li>
+                <li><a href="#contact" className="hover:text-teal-700 transition-colors">Contact Us</a></li>
+                <li><a href="#privacy" className="hover:text-teal-700 transition-colors">Privacy Policy</a></li>
+              </ul>
+            </div>
+
+            {/* Col 4: Empty space / Brand mission */}
+            <div className="space-y-2">
+              <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-xs mb-3">
+                OFFLINE SHOPPING UTILITY
+              </h4>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Designed for shoppers across Kochi, Kerala. Compare prices, save to reminder cart, and walk in with verified promotional codes.
+              </p>
+            </div>
+          </div>
+
+          {/* Bottom Copyright Bar */}
+          <div className="pt-6 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+            <p>© 2026 LOOK MY DEALS — All Rights Reserved</p>
+          </div>
+        </div>
+      </footer>
 
       {/* Reminder Cart Drawer */}
       <ReminderCartDrawer

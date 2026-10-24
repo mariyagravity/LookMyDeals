@@ -6,10 +6,11 @@ import {
   Locality,
   Store,
 } from './types';
-import { loadCartFromStorage, saveCartToStorage } from './lib/cartStorage';
+import { loadCartFromStorage, saveCartToStorage, CLAIMS_STORAGE_KEY } from './lib/cartStorage';
 import { readApiJson } from './lib/api';
 import { DealCard } from './components/DealCard';
 import { ClaimModal } from './components/ClaimModal';
+import { MyClaimsModal } from './components/MyClaimsModal';
 import { ReminderCartDrawer } from './components/ReminderCartDrawer';
 import { RequestOfferModal } from './components/RequestOfferModal';
 import {
@@ -39,7 +40,6 @@ import {
 import { PopularSupermarketsMap } from './components/PopularSupermarketsMap';
 import {
   Search,
-  ClipboardList,
   User,
   Lock,
   Menu,
@@ -52,6 +52,9 @@ import {
   Phone,
   CheckCircle2,
   X,
+  Ticket,
+  ShoppingBag,
+  PlusCircle,
 } from 'lucide-react';
 
 const PublicBrochure = lazy(() => import('./pages/PublicBrochure').then((module) => ({ default: module.PublicBrochure })));
@@ -101,12 +104,36 @@ export default function App() {
     categories: Category[];
   }>({ listings: [], stores: [], localities: [], categories: [] });
 
-  // Cart & Modals
+  // Cart, Claims & Modals
   const [cartItems, setCartItems] = useState<CartItem[]>(() => loadCartFromStorage());
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [claimingListing, setClaimingListing] = useState<EnrichedListing | null>(null);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [isClaimsModalOpen, setIsClaimsModalOpen] = useState(false);
+  const [claimsCount, setClaimsCount] = useState<number>(0);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const updateClaimsCount = () => {
+    try {
+      const raw = localStorage.getItem(CLAIMS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setClaimsCount(parsed.length);
+          return;
+        }
+      }
+      setClaimsCount(0);
+    } catch {
+      setClaimsCount(0);
+    }
+  };
+
+  useEffect(() => {
+    updateClaimsCount();
+  }, []);
+
+  const totalCartCount = useMemo(() => cartItems.reduce((acc, i) => acc + i.quantity, 0), [cartItems]);
 
   // Load catalog
   useEffect(() => {
@@ -187,6 +214,7 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ claimId: claim.id, listingId: claim.listingId }),
     }).catch(() => undefined);
+    updateClaimsCount();
   };
 
   const handleInlineRequestSubmit = (e: React.FormEvent) => {
@@ -282,45 +310,65 @@ export default function App() {
           <nav className="hidden lg:flex items-center gap-1 xl:gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => { setViewMode('shopper'); setSelectedCategory(null); setSelectedStore(null); }}
-              className="text-black font-semibold text-[14px] xl:text-[15px] px-3 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors cursor-pointer"
+              onClick={() => {
+                setViewMode('shopper');
+                setSelectedCategory(null);
+                setSelectedStore(null);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors cursor-pointer"
             >
-              Home
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('retailer')}
-              className="text-black font-semibold text-[14px] xl:text-[15px] px-3 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors cursor-pointer"
-            >
-              Become a Shop With Us
+              Discover
             </button>
             <a
-              href="#about"
-              className="text-black font-semibold text-[14px] xl:text-[15px] px-3 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors inline-block"
+              href="#categories"
+              onClick={() => {
+                if (viewMode !== 'shopper') setViewMode('shopper');
+              }}
+              className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors inline-block"
             >
-              About Us
+              Categories
             </a>
             <button
               type="button"
-              onClick={() => setIsCartOpen(true)}
-              className="text-black font-semibold text-[14px] xl:text-[15px] px-3 py-1.5 whitespace-nowrap flex items-center gap-1.5 hover:text-teal-700 transition-colors cursor-pointer"
+              onClick={() => setIsClaimsModalOpen(true)}
+              className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap flex items-center gap-1.5 hover:text-teal-700 transition-colors cursor-pointer"
             >
-              <ClipboardList className="w-4 h-4 text-black shrink-0" />
-              <span>Shopping List</span>
-              {cartItems.length > 0 && (
-                <span className="px-1.5 py-0.5 bg-slate-900 text-white text-[10px] font-bold rounded-full ml-1">
-                  {cartItems.reduce((acc, i) => acc + i.quantity, 0)}
+              <Ticket className="w-4 h-4 text-slate-700 shrink-0" />
+              <span>Claim Deals</span>
+              {claimsCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-amber-500 text-white text-[10px] font-bold rounded-full">
+                  {claimsCount}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCartOpen(true)}
+              className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap flex items-center gap-1.5 hover:text-teal-700 transition-colors cursor-pointer"
+            >
+              <ShoppingBag className="w-4 h-4 text-slate-700 shrink-0" />
+              <span>Reminder Cart</span>
+              {totalCartCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-teal-700 text-white text-[10px] font-bold rounded-full">
+                  {totalCartCount}
                 </span>
               )}
             </button>
             <button
               type="button"
               onClick={() => setIsRequestModalOpen(true)}
-              className="text-black font-semibold text-[14px] xl:text-[15px] px-3 py-1.5 whitespace-nowrap flex items-center gap-1.5 hover:text-teal-700 transition-colors cursor-pointer"
+              className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap flex items-center gap-1.5 hover:text-teal-700 transition-colors cursor-pointer"
             >
-              <User className="w-4 h-4 text-black shrink-0" />
-              <span>My Account</span>
+              <PlusCircle className="w-4 h-4 text-slate-700 shrink-0" />
+              <span>Request an Offer</span>
             </button>
+            <a
+              href="#about"
+              className="text-black font-semibold text-[14px] xl:text-[15px] px-2.5 py-1.5 whitespace-nowrap hover:text-teal-700 transition-colors inline-block"
+            >
+              About Us
+            </a>
           </nav>
 
           {/* Right Action Buttons & Mobile Menu Toggle */}
@@ -388,28 +436,40 @@ export default function App() {
                   setSelectedCategory(null);
                   setSelectedStore(null);
                   setIsMobileMenuOpen(false);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className="text-left px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors"
               >
-                Home
+                Discover
               </button>
-              <button
-                type="button"
+              <a
+                href="#categories"
                 onClick={() => {
-                  setViewMode('retailer');
+                  if (viewMode !== 'shopper') setViewMode('shopper');
                   setIsMobileMenuOpen(false);
                 }}
                 className="text-left px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors"
               >
-                Become a Shop With Us
-              </button>
-              <a
-                href="#about"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors"
-              >
-                About Us
+                Categories
               </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsClaimsModalOpen(true);
+                  setIsMobileMenuOpen(false);
+                }}
+                className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors text-left"
+              >
+                <span className="flex items-center gap-2">
+                  <Ticket className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Claim Deals / My Claims</span>
+                </span>
+                {claimsCount > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-500 text-white text-[11px] font-bold rounded-full">
+                    {claimsCount}
+                  </span>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -419,12 +479,12 @@ export default function App() {
                 className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors text-left"
               >
                 <span className="flex items-center gap-2">
-                  <ClipboardList className="w-4 h-4 text-black shrink-0" />
-                  Shopping List
+                  <ShoppingBag className="w-4 h-4 text-teal-700 shrink-0" />
+                  <span>Reminder Cart</span>
                 </span>
-                {cartItems.length > 0 && (
-                  <span className="px-2 py-0.5 bg-slate-900 text-white text-[11px] font-bold rounded-full">
-                    {cartItems.reduce((acc, i) => acc + i.quantity, 0)}
+                {totalCartCount > 0 && (
+                  <span className="px-2 py-0.5 bg-teal-700 text-white text-[11px] font-bold rounded-full">
+                    {totalCartCount}
                   </span>
                 )}
               </button>
@@ -436,9 +496,26 @@ export default function App() {
                 }}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors text-left"
               >
-                <User className="w-4 h-4 text-black shrink-0" />
-                My Account
+                <PlusCircle className="w-4 h-4 text-teal-700 shrink-0" />
+                <span>Request an Offer</span>
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('retailer');
+                  setIsMobileMenuOpen(false);
+                }}
+                className="text-left px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors"
+              >
+                Become a Shop With Us (Retailer)
+              </button>
+              <a
+                href="#about"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-3 py-2 rounded-lg hover:bg-slate-50 hover:text-teal-700 transition-colors"
+              >
+                About Us
+              </a>
             </div>
           </div>
         )}
@@ -588,7 +665,7 @@ export default function App() {
           </section>
 
           {/* 4. SECTION: EXPLORE OFFERS BY CATEGORY */}
-          <section className="py-10 max-w-7xl mx-auto px-4 sm:px-6 w-full">
+          <section id="categories" className="py-10 max-w-7xl mx-auto px-4 sm:px-6 w-full">
             <div className="mb-6">
               <span className="text-[11px] font-bold text-[#0D9488] tracking-widest uppercase block mb-1">
                 BROWSE BY TYPE
@@ -873,6 +950,19 @@ export default function App() {
         listing={claimingListing}
         onClose={() => setClaimingListing(null)}
         onClaimSuccess={handleClaimSuccess}
+      />
+
+      {/* My Claims List Modal */}
+      <MyClaimsModal
+        isOpen={isClaimsModalOpen}
+        onClose={() => {
+          setIsClaimsModalOpen(false);
+          updateClaimsCount();
+        }}
+        onExploreDeals={() => {
+          const el = document.getElementById('deals-section') || document.getElementById('categories');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
       />
 
       {/* Request an Offer Modal */}

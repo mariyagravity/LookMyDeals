@@ -14,7 +14,7 @@ const RequestSchema = z.object({
   locality: z.string().trim().min(1).max(120),
   pinCode: z.string().regex(/^\d{6}$/),
   targetPriceMinor: z.number().int().nonnegative().optional(),
-  contactMasked: z.string().max(20).optional(),
+  contactMasked: z.string().trim().min(1, 'Contact number is required').max(20),
 });
 
 router.get('/', requireRetailer, async (req: Request, res: Response) => {

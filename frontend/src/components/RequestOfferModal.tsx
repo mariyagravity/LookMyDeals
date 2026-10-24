@@ -54,9 +54,23 @@ export const RequestOfferModal: React.FC<RequestOfferModalProps> = ({
       return;
     }
 
-    const cleanPhone = phone.replace(/\D/g, '');
-    if (cleanPhone.length > 0 && cleanPhone.length !== 10) {
-      setError('Please enter a valid 10-digit mobile number or leave blank.');
+    let cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+      cleanPhone = cleanPhone.slice(2);
+    }
+
+    if (!cleanPhone) {
+      setError('Contact mobile number is mandatory. Please enter your 10-digit number.');
+      return;
+    }
+
+    if (cleanPhone.length !== 10) {
+      setError('Contact number must be exactly 10 digits.');
+      return;
+    }
+
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      setError('Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.');
       return;
     }
 
@@ -80,7 +94,7 @@ export const RequestOfferModal: React.FC<RequestOfferModalProps> = ({
       locality: loc.name,
       pinCode: loc.pinCode,
       targetPriceMinor,
-      contactMasked: cleanPhone ? maskPhoneNumber(cleanPhone) : undefined,
+      contactMasked: maskPhoneNumber(cleanPhone),
     };
 
     try {
@@ -230,7 +244,7 @@ export const RequestOfferModal: React.FC<RequestOfferModalProps> = ({
 
               <div>
                 <label htmlFor="req-phone" className="block text-xs font-semibold text-ink mb-1">
-                  Contact Mobile (Optional)
+                  Contact Mobile Number *
                 </label>
                 <div className="flex items-center gap-2">
                   <span className="px-3 py-2 bg-slate-100 text-xs font-semibold rounded-lg text-ink-muted border border-surface-border">
@@ -239,13 +253,33 @@ export const RequestOfferModal: React.FC<RequestOfferModalProps> = ({
                   <input
                     id="req-phone"
                     type="tel"
+                    required
                     maxLength={10}
-                    placeholder="10-digit number"
+                    placeholder="10-digit number (e.g. 9847012345)"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setPhone(val);
+                      if (error) setError('');
+                    }}
                     className="w-full px-3 py-2 text-sm border border-surface-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
                   />
                 </div>
+                {phone.length === 10 && (
+                  <p className="text-[11px] text-ink-muted mt-1 flex items-center justify-between">
+                    <span>Privacy masked: <strong className="font-mono text-ink">{maskPhoneNumber(phone)}</strong></span>
+                    {/^[6-9]\d{9}$/.test(phone) ? (
+                      <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Valid 10-digit number
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 font-medium">Must start with 6, 7, 8, or 9</span>
+                    )}
+                  </p>
+                )}
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Under DPDP privacy guidelines, your raw number is masked (e.g. 98•••••345) and never shared publicly.
+                </p>
               </div>
 
               {error && (
